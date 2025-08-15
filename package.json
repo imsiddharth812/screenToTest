@@ -1,0 +1,43 @@
+{
+  "name": "screen2testcases",
+  "version": "1.0.0",
+  "description": "AI-powered test case generation from UI screenshots",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "server": "node server/index.js",
+    "server:dev": "nodemon server/index.js",
+    "dev:full": "./start-dev.sh",
+    "check": "./check-servers.sh",
+    "clean": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true && lsof -ti:3001 | xargs kill -9 2>/dev/null || true"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.3",
+    "autoprefixer": "^10.4.19",
+    "cors": "^2.8.5",
+    "docx": "^8.5.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "form-data": "^4.0.4",
+    "multer": "^2.0.0-rc.4",
+    "next": "14.2.31",
+    "node-fetch": "^3.3.2",
+    "postcss": "^8.4.40",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.7",
+    "tesseract.js": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.14.12",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "nodemon": "^3.1.4",
+    "typescript": "^5.5.4"
+  }
+}
