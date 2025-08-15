@@ -139,6 +139,9 @@ temp/
 *.pkl
 *.h5
 
+# Tesseract OCR language data (auto-downloaded)
+*.traineddata
+
 # Backup files
 *.bak
 *.backup
