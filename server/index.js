@@ -146,6 +146,10 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
 
     console.log(`Processing ${files.length} images...`)
 
+    // Get page names from request
+    const pageNames = req.body.pageNames ? JSON.parse(req.body.pageNames) : []
+    console.log('Page names received:', pageNames)
+
     // Sort files by originalname to maintain consistent order
     files.sort((a, b) => a.originalname.localeCompare(b.originalname))
 
@@ -180,7 +184,7 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     if (req.body.ocrOnly === 'true') {
       // Return OCR results for user review
       const sessionId = Date.now().toString()
-      ocrCache.set(sessionId, { ocrResults, imageCount: files.length })
+      ocrCache.set(sessionId, { ocrResults, imageCount: files.length, pageNames })
       
       const detectedElements = ocrResults.map((text, index) => {
         // Extract potential UI elements from OCR text
@@ -206,11 +210,11 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     // Generate test cases using Claude AI
     const forceRegenerate = req.body.regenerate === 'true'
     console.log(`Generating test cases with Claude AI... ${forceRegenerate ? '(forced regeneration)' : ''}`)
-    const testCases = await aiService.generateTestCases(ocrResults, files.length, forceRegenerate)
+    const testCases = await aiService.generateTestCases(ocrResults, files.length, forceRegenerate, pageNames)
 
     // Store OCR results for potential regeneration
     const sessionId = Date.now().toString()
-    ocrCache.set(sessionId, { ocrResults, imageCount: files.length })
+    ocrCache.set(sessionId, { ocrResults, imageCount: files.length, pageNames })
     testCases._sessionId = sessionId
 
     console.log('AI generated test cases successfully!')
@@ -243,10 +247,10 @@ app.post('/api/generate-with-corrections', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or expired session' })
     }
 
-    const { ocrResults, imageCount } = ocrCache.get(sessionId)
+    const { ocrResults, imageCount, pageNames } = ocrCache.get(sessionId)
     
     console.log('Generating test cases with corrected labels...')
-    const testCases = await aiService.generateTestCasesWithCorrections(ocrResults, imageCount, correctedElements)
+    const testCases = await aiService.generateTestCasesWithCorrections(ocrResults, imageCount, correctedElements, pageNames)
     
     testCases._sessionId = sessionId
     console.log('AI generated test cases with corrections successfully!')
@@ -266,10 +270,10 @@ app.post('/api/regenerate-testcases', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or expired session' })
     }
 
-    const { ocrResults, imageCount } = ocrCache.get(sessionId)
+    const { ocrResults, imageCount, pageNames } = ocrCache.get(sessionId)
     
     console.log('Regenerating test cases with Claude AI...')
-    const testCases = await aiService.generateTestCases(ocrResults, imageCount, true)
+    const testCases = await aiService.generateTestCases(ocrResults, imageCount, true, pageNames)
     
     console.log('AI regenerated test cases successfully!')
     res.json(testCases)

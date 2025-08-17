@@ -8,7 +8,7 @@ class AIService {
         this.testCaseCache = new Map() // Cache for consistent results
     }
 
-    async generateTestCases(ocrResults, imageCount, forceRegenerate = false) {
+    async generateTestCases(ocrResults, imageCount, forceRegenerate = false, pageNames = []) {
         try {
             // Validate input
             if (!ocrResults || ocrResults.length === 0) {
@@ -16,8 +16,8 @@ class AIService {
                 ocrResults = [`${imageCount} screenshots uploaded - OCR processing failed or no text detected`]
             }
 
-            // Create a deterministic cache key from OCR results
-            const cacheKey = this.createCacheKey(ocrResults)
+            // Create a deterministic cache key from OCR results and page names
+            const cacheKey = this.createCacheKey(ocrResults, pageNames)
             
             // Check cache for consistent results (unless forced regeneration)
             if (!forceRegenerate && this.testCaseCache.has(cacheKey)) {
@@ -25,7 +25,7 @@ class AIService {
                 return this.testCaseCache.get(cacheKey)
             }
 
-            const prompt = this.buildPrompt(ocrResults, imageCount)
+            const prompt = this.buildPrompt(ocrResults, imageCount, pageNames)
 
             console.log('Sending request to Claude API...')
             const response = await this.anthropic.messages.create({
@@ -54,7 +54,7 @@ class AIService {
         }
     }
 
-    async generateTestCasesWithCorrections(ocrResults, imageCount, correctedElements, forceRegenerate = false) {
+    async generateTestCasesWithCorrections(ocrResults, imageCount, correctedElements, pageNames = [], forceRegenerate = false) {
         try {
             // Validate input
             if (!ocrResults || ocrResults.length === 0) {
@@ -74,7 +74,7 @@ class AIService {
                 return this.testCaseCache.get(cacheKey)
             }
 
-            const prompt = this.buildPromptWithCorrections(enhancedOcrResults, imageCount, correctedElements)
+            const prompt = this.buildPromptWithCorrections(enhancedOcrResults, imageCount, correctedElements, pageNames)
 
             console.log('Sending request to Claude API with corrections...')
             const response = await this.anthropic.messages.create({
@@ -123,34 +123,42 @@ class AIService {
         return enhanced
     }
 
-    buildPromptWithCorrections(ocrResults, imageCount, correctedElements) {
+    buildPromptWithCorrections(ocrResults, imageCount, correctedElements, pageNames = []) {
         const correctionsSummary = correctedElements
             .flatMap(element => element.detectedTexts.filter(item => item.label && item.label.trim()))
             .map(item => `• "${item.text}" is identified as ${item.type}: ${item.label}`)
             .join('\n')
 
-        return this.buildPrompt(ocrResults, imageCount) + 
+        return this.buildPrompt(ocrResults, imageCount, pageNames) + 
             (correctionsSummary ? `\n\n**USER-PROVIDED ELEMENT CORRECTIONS:**\n${correctionsSummary}\n\nIMPORTANT: Use these corrections to generate more accurate test cases. When referencing UI elements in test steps, use the corrected labels provided by the user instead of the raw OCR text.` : '')
     }
 
-    createCacheKey(ocrResults) {
-        // Create a deterministic key based on OCR content
+    createCacheKey(ocrResults, pageNames = []) {
+        // Create a deterministic key based on OCR content and page names
         const crypto = require('crypto')
-        const content = JSON.stringify({ ocrResults })
+        const content = JSON.stringify({ ocrResults, pageNames })
         return crypto.createHash('md5').update(content).digest('hex')
     }
 
-    buildPrompt(ocrResults, imageCount) {
-        const detectedText = ocrResults.map((text, index) =>
-            `--- Screenshot ${index + 1} ---\n${text}`
-        ).join('\n\n')
+    buildPrompt(ocrResults, imageCount, pageNames = []) {
+        const detectedText = ocrResults.map((text, index) => {
+            const pageName = pageNames[index] || `Page ${index + 1}`
+            return `--- ${pageName} ---\n${text}`
+        }).join('\n\n')
+
+        const pageFlow = pageNames.length > 0 
+            ? pageNames.map((name, index) => `${index + 1}. ${name}`).join('\n')
+            : Array.from({length: imageCount}, (_, i) => `${i + 1}. Page ${i + 1}`).join('\n')
 
         return `You are an expert QA engineer creating test cases for novice testers who have NO prior knowledge of the application. Your test cases must be so detailed and clear that anyone can execute them successfully.
 
-**Screenshots Analysis (In Sequential Order):**
+**Application Pages Analysis (In Sequential User Flow Order):**
 ${detectedText}
 
-**IMPORTANT CONTEXT:** The screenshots above are provided in the EXACT SEQUENCE of the user workflow/application flow. Screenshot 1 represents the starting point, Screenshot 2 shows the next step in the user journey, and so on. Use this sequence information to understand the natural flow and create test cases that follow this logical progression.
+**USER WORKFLOW SEQUENCE:**
+${pageFlow}
+
+**IMPORTANT CONTEXT:** The pages above are provided in the EXACT SEQUENCE of the user workflow/application flow. This represents the natural progression through the application that users would follow. Use this sequence information to understand the user journey and create test cases that follow this logical progression from one page to the next.
 
 **CRITICAL REQUIREMENTS for User-Friendly Test Cases:**
 
@@ -161,12 +169,12 @@ ${detectedText}
 5. **Clear Expectations**: Specify exactly what the user should see at each step
 
 **Test Case Writing Guidelines for Novice Testers:**
-- **Follow the Sequential Flow**: Use the screenshot sequence to create test cases that mirror the natural user journey
-- **Flow-Based Test Cases**: Create comprehensive tests that span multiple screenshots in the provided sequence (e.g., "Navigate from Screenshot 1 state to Screenshot 3 state")
+- **Follow the Page Flow**: Use the page sequence to create test cases that mirror the natural user journey through the application
+- **Flow-Based Test Cases**: Create comprehensive tests that span multiple pages in the provided sequence (e.g., "Navigate from Login Page to Dashboard then to User Profile")
 - Start each test with navigation from a common starting point (homepage, login page, dashboard)
 - Use business-friendly descriptive titles like "Verify user can successfully complete the workflow from login to task completion"
-- Include screen/page names in steps: "On the Client Creation form", "Navigate to the Cases section"
-- **Reference Screenshot Sequence**: When describing navigation, reference the flow: "Following the workflow shown in the screenshots, navigate from the dashboard (Screenshot 1) to the form submission (Screenshot 3)"
+- **Always use page names in steps**: "On the ${pageNames[0] || 'Login Page'}", "Navigate to the ${pageNames[1] || 'Dashboard'}", "On the ${pageNames[2] || 'User Profile Page'}"
+- **Reference Page Flow**: When describing navigation, reference the flow using page names: "Following the application workflow, navigate from ${pageNames[0] || 'the first page'} to ${pageNames[2] || 'the target page'}"
 - Specify exact UI elements with visual descriptions: "Click the blue 'Create New Case' button located in the top right", "Select 'High Priority' from the Priority dropdown menu"
 - Describe expected visual feedback clearly: "Verify the green success message 'Client created successfully' appears at the top of the page"
 - Include error scenarios with clear recovery steps
@@ -198,16 +206,16 @@ Each test case must include:
 }
 
 **Coverage Areas (Generate comprehensive test cases for ALL areas):**
-1. **Complete Flow Testing**: End-to-end tests that follow the exact screenshot sequence from start to finish
-2. **Happy Path Workflows**: Complete successful user journeys following the provided flow
-3. **Field Validation**: Individual form field testing with navigation context referencing the screenshot sequence
-4. **Error Handling**: Invalid inputs with clear recovery steps at each stage of the flow
-5. **Business Logic**: Workflow rules and constraints based on the sequential steps shown
-6. **User Permissions**: Different user role scenarios at various points in the flow
-7. **Data Relationships**: How different entities interact across the workflow stages
-8. **Edge Cases**: Boundary conditions with full context at each step of the sequence
-9. **Integration Points**: Cross-module functionality following the natural flow progression
-10. **Flow Interruption**: Test scenarios where users deviate from or interrupt the standard flow
+1. **Complete Flow Testing**: End-to-end tests that follow the exact page sequence from start to finish
+2. **Happy Path Workflows**: Complete successful user journeys following the provided page flow
+3. **Field Validation**: Individual form field testing with navigation context using specific page names
+4. **Error Handling**: Invalid inputs with clear recovery steps at each stage of the page flow
+5. **Business Logic**: Workflow rules and constraints based on the sequential page progression
+6. **User Permissions**: Different user role scenarios at various points in the page flow
+7. **Data Relationships**: How different entities interact across the page workflow stages
+8. **Edge Cases**: Boundary conditions with full context at each step of the page sequence
+9. **Integration Points**: Cross-module functionality following the natural page flow progression
+10. **Flow Interruption**: Test scenarios where users deviate from or interrupt the standard page flow
 
 **ADDITIONAL QUALITY REQUIREMENTS:**
 - Include browser/system requirements when relevant
@@ -221,19 +229,21 @@ Each test case must include:
 
 **IMPORTANT:**
 - Generate MINIMUM 12-15 comprehensive test cases for thorough coverage
-- **PRIORITIZE FLOW-BASED TESTING**: Create multiple test cases that follow the screenshot sequence to test the complete user journey
+- **PRIORITIZE FLOW-BASED TESTING**: Create multiple test cases that follow the page sequence to test the complete user journey
 - Each test case must be completely self-contained and executable by someone with zero application knowledge
 - Make titles business-friendly and descriptive (avoid technical jargon)
-- **Always reference the flow**: Include navigation that follows the logical sequence shown in the screenshots
-- Specify exact screen/page names and UI elements with clear visual descriptions
+- **Always use page names in test steps**: Reference specific page names like "${pageNames[0] || 'Login Page'}", "${pageNames[1] || 'Dashboard'}", etc. instead of generic terms
+- **NEVER reference screenshots in test steps**: Use page names and business context only
+- **Always reference the page flow**: Include navigation that follows the logical sequence of named pages
+- Specify exact page names and UI elements with clear visual descriptions
 - Include realistic, specific test data with actual example values
 - Write for someone who has never used the application before
-- Consider real-world scenarios and user workflows based on the provided sequence
-- Include both positive and negative test scenarios at different points in the flow
-- Add edge cases with proper context and navigation following the sequence
+- Consider real-world scenarios and user workflows based on the provided page sequence
+- Include both positive and negative test scenarios at different points in the page flow
+- Add edge cases with proper context and navigation following the page sequence
 - Ensure consistent terminology throughout all test cases
 - Use action-oriented language ("Click", "Enter", "Select", "Verify")
-- **Create flow variations**: Test alternative paths and what happens when users skip steps or go back in the sequence
+- **Create flow variations**: Test alternative paths and what happens when users skip steps or go back in the page sequence
 
 Generate MINIMUM 12-15 extensive, user-friendly test cases that provide complete coverage with clear navigation and context. Ensure each test case is written so clearly that someone who has never seen the application before can execute it successfully without any additional guidance or context.
 

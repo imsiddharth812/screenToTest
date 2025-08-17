@@ -8,6 +8,7 @@ interface UploadedFile {
   preview: string
   id: string
   originalName: string
+  customName: string
 }
 
 export default function Upload() {
@@ -16,6 +17,7 @@ export default function Upload() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [maximizedImage, setMaximizedImage] = useState<string | null>(null)
+  const [maximizedImageName, setMaximizedImageName] = useState<string>('')
   const router = useRouter()
 
   // Handle ESC key to close maximized image
@@ -23,6 +25,7 @@ export default function Upload() {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && maximizedImage) {
         setMaximizedImage(null)
+        setMaximizedImageName('')
       }
     }
     
@@ -69,7 +72,8 @@ export default function Upload() {
         file,
         preview: URL.createObjectURL(file),
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        originalName: file.name
+        originalName: file.name,
+        customName: file.name.replace(/\.[^/.]+$/, '') // Remove file extension for default custom name
       }))
 
     setFiles(prev => [...prev, ...uploadedFiles])
@@ -134,6 +138,14 @@ export default function Upload() {
     })
   }
 
+  const updateFileName = (index: number, newName: string) => {
+    setFiles(prev => {
+      const newFiles = [...prev]
+      newFiles[index] = { ...newFiles[index], customName: newName }
+      return newFiles
+    })
+  }
+
   const generateTestCases = async () => {
     if (files.length < 3) {
       alert('Please upload at least 3 screenshots')
@@ -148,6 +160,10 @@ export default function Upload() {
         // Use a consistent naming pattern that preserves order
         formData.append(`image${String(index).padStart(3, '0')}`, uploadedFile.file)
       })
+      
+      // Send page names for better context
+      const pageNames = files.map(file => file.customName)
+      formData.append('pageNames', JSON.stringify(pageNames))
       formData.append('ocrOnly', 'true') // Request OCR processing only
 
       const response = await fetch('http://localhost:3001/api/generate-testcases', {
@@ -315,7 +331,8 @@ export default function Upload() {
                           <h3 className="font-bold text-blue-900 mb-2">Create Your User Journey</h3>
                           <p className="text-sm text-blue-800 mb-3">
                             Organize your screenshots to represent a complete user flow through your application. 
-                            This sequence helps AI understand user behavior patterns and generate comprehensive test scenarios.
+                            <strong>Give each page a descriptive name</strong> (like "Login Page", "Dashboard", "User Profile") 
+                            to help AI understand the context and generate more accurate test scenarios.
                           </p>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                             <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
@@ -356,8 +373,8 @@ export default function Upload() {
                                     </div>
                                   </div>
                                 </div>
-                                <div className="text-xs text-purple-700 mt-2 max-w-24 truncate font-medium text-center" title={file.originalName}>
-                                  {file.originalName}
+                                <div className="text-xs text-purple-700 mt-2 max-w-24 truncate font-medium text-center" title={file.customName}>
+                                  {file.customName}
                                 </div>
                               </div>
                               {index < files.length - 1 && (
@@ -412,26 +429,48 @@ export default function Upload() {
                   onDragEnd={handleImageDragEnd}
                 >
                   {/* Header with controls */}
-                  <div className="flex items-center justify-between p-3 pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="bg-blue-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">
-                        {index + 1}
+                  <div className="p-3 pb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-blue-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">
+                          {index + 1}
+                        </div>
+                        <span className="text-xs text-gray-500 truncate max-w-24" title={uploadedFile.originalName}>
+                          {uploadedFile.originalName}
+                        </span>
                       </div>
-                      <span className="text-sm font-medium text-gray-700 truncate max-w-32" title={uploadedFile.originalName}>
-                        {uploadedFile.originalName}
-                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFile(index);
+                        }}
+                        className="bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm transition-colors shadow-sm"
+                        title="Remove screenshot"
+                      >
+                        ×
+                      </button>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeFile(index);
-                      }}
-                      className="bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm transition-colors shadow-sm"
-                      title="Remove screenshot"
-                    >
-                      ×
-                    </button>
+                    
+                    {/* Editable Name Field */}
+                    <div className="mt-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        📝 Page Description:
+                      </label>
+                      <input
+                        type="text"
+                        value={uploadedFile.customName}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          updateFileName(index, e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        placeholder="e.g., Login Page, Dashboard, User Profile..."
+                        title="Use descriptive names like 'Client Registration Form' or 'Invoice Dashboard' - these names will appear in your test cases instead of generic screenshot references"
+                      />
+                    </div>
                   </div>
+
 
                   {/* Image container */}
                   <div className="relative mx-3 mb-3">
@@ -440,6 +479,7 @@ export default function Upload() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setMaximizedImage(uploadedFile.preview);
+                        setMaximizedImageName(uploadedFile.customName);
                       }}
                     >
                       <img
@@ -462,11 +502,16 @@ export default function Upload() {
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent rounded-b-lg">
                       <div className="px-3 py-2">
                         <div className="flex items-center justify-between text-white">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
                             <span className="text-blue-300">📱</span>
-                            <span className="text-xs font-medium">Step {index + 1} in Flow</span>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-xs font-medium">Step {index + 1}</span>
+                              <span className="text-[10px] opacity-90 truncate" title={uploadedFile.customName}>
+                                {uploadedFile.customName}
+                              </span>
+                            </div>
                           </div>
-                          <div className="text-xs opacity-75">
+                          <div className="text-xs opacity-75 ml-2">
                             {index === 0 && "Start"}
                             {index === files.length - 1 && index > 0 && "End"}
                             {index > 0 && index < files.length - 1 && "→"}
@@ -589,24 +634,46 @@ export default function Upload() {
         {maximizedImage && (
           <div 
             className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
-            onClick={() => setMaximizedImage(null)}
+            onClick={() => {
+              setMaximizedImage(null);
+              setMaximizedImageName('');
+            }}
           >
             <div className="relative max-w-full max-h-full">
+              {/* Screenshot Name Header */}
+              <div className="absolute top-4 left-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg shadow-lg z-10">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📱</span>
+                  <div>
+                    <div className="font-bold text-sm">{maximizedImageName}</div>
+                    <div className="text-xs opacity-90">Screenshot Preview</div>
+                  </div>
+                </div>
+              </div>
+              
               <img
                 src={maximizedImage}
-                alt="Maximized screenshot"
+                alt={`Maximized screenshot: ${maximizedImageName}`}
                 className="max-w-full max-h-full object-contain"
                 onClick={(e) => e.stopPropagation()}
               />
+              
               <button
-                onClick={() => setMaximizedImage(null)}
-                className="absolute top-4 right-4 bg-red-500 hover:bg-red-600 text-white rounded-full w-10 h-10 flex items-center justify-center text-xl font-bold transition-colors shadow-lg"
+                onClick={() => {
+                  setMaximizedImage(null);
+                  setMaximizedImageName('');
+                }}
+                className="absolute top-4 right-4 bg-red-500 hover:bg-red-600 text-white rounded-full w-10 h-10 flex items-center justify-center text-xl font-bold transition-colors shadow-lg z-10"
                 title="Close"
               >
                 ×
               </button>
-              <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
-                Press ESC or click outside to close
+              
+              <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg text-sm">
+                <div className="flex items-center gap-2">
+                  <span>💡</span>
+                  <span>Press ESC or click outside to close</span>
+                </div>
               </div>
             </div>
           </div>
