@@ -26,11 +26,13 @@ interface TestCases {
   target?: string[];
   system?: string[];
   positive?: string[];
+  _sessionId?: string;
 }
 
 export default function Results() {
   const [testCases, setTestCases] = useState<TestCases | null>(null);
   const [activeTab, setActiveTab] = useState("all");
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("testCases");
@@ -115,6 +117,42 @@ export default function Results() {
     }
   };
 
+  const regenerateTestCases = async () => {
+    if (!testCases?._sessionId) {
+      alert("Cannot regenerate - session expired. Please upload screenshots again.");
+      return;
+    }
+
+    setIsRegenerating(true);
+    
+    try {
+      const response = await fetch("http://localhost:3001/api/regenerate-testcases", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sessionId: testCases._sessionId }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        result._sessionId = testCases._sessionId; // Preserve session ID
+        setTestCases(result);
+        localStorage.setItem("testCases", JSON.stringify(result));
+        
+        // Show success message
+        alert("Test cases regenerated successfully! You should see different variations now.");
+      } else {
+        throw new Error("Failed to regenerate test cases");
+      }
+    } catch (error) {
+      console.error("Regeneration failed:", error);
+      alert("Failed to regenerate test cases. Please try again or upload new screenshots.");
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   if (!testCases) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -184,6 +222,15 @@ export default function Results() {
             Generated Test Cases
           </h1>
           <div className="space-x-4">
+            {testCases._sessionId && (
+              <button
+                onClick={regenerateTestCases}
+                disabled={isRegenerating}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-2 px-4 rounded"
+              >
+                {isRegenerating ? "Regenerating..." : "🔄 Regenerate Test Cases"}
+              </button>
+            )}
             <button
               onClick={downloadDocx}
               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded"

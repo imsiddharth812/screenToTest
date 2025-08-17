@@ -9,7 +9,7 @@ const fs = require('fs')
 const AIService = require('./aiService')
 
 const app = express()
-const PORT = process.env.PORT || 3001
+const PORT = process.env.SERVER_PORT || 3001
 
 // Initialize AI Service
 const aiService = new AIService()
@@ -133,6 +133,9 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// Store OCR results temporarily for regeneration
+const ocrCache = new Map()
+
 // Routes
 app.post('/api/generate-testcases', upload.any(), async (req, res) => {
   try {
@@ -142,6 +145,9 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     }
 
     console.log(`Processing ${files.length} images...`)
+
+    // Sort files by originalname to maintain consistent order
+    files.sort((a, b) => a.originalname.localeCompare(b.originalname))
 
     // Process each image with OCR
     const ocrResults = []
@@ -170,9 +176,42 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
 
     console.log('OCR Results:', ocrResults)
 
+    // Check if this is just OCR processing or full generation
+    if (req.body.ocrOnly === 'true') {
+      // Return OCR results for user review
+      const sessionId = Date.now().toString()
+      ocrCache.set(sessionId, { ocrResults, imageCount: files.length })
+      
+      const detectedElements = ocrResults.map((text, index) => {
+        // Extract potential UI elements from OCR text
+        const lines = text.split('\n').filter(line => line.trim().length > 0)
+        return {
+          screenshotIndex: index,
+          detectedTexts: lines.map((line, lineIndex) => ({
+            id: `${index}-${lineIndex}`,
+            text: line.trim(),
+            label: '', // User will fill this
+            type: 'unknown' // User will specify
+          }))
+        }
+      })
+
+      return res.json({
+        sessionId,
+        detectedElements,
+        requiresReview: true
+      })
+    }
+
     // Generate test cases using Claude AI
-    console.log('Generating test cases with Claude AI...')
-    const testCases = await aiService.generateTestCases(ocrResults, files.length)
+    const forceRegenerate = req.body.regenerate === 'true'
+    console.log(`Generating test cases with Claude AI... ${forceRegenerate ? '(forced regeneration)' : ''}`)
+    const testCases = await aiService.generateTestCases(ocrResults, files.length, forceRegenerate)
+
+    // Store OCR results for potential regeneration
+    const sessionId = Date.now().toString()
+    ocrCache.set(sessionId, { ocrResults, imageCount: files.length })
+    testCases._sessionId = sessionId
 
     console.log('AI generated test cases successfully!')
     res.json(testCases)
@@ -192,6 +231,51 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
       console.error('Fallback also failed:', fallbackError)
       res.status(500).json({ error: 'Failed to generate test cases' })
     }
+  }
+})
+
+// Generate test cases with corrected labels
+app.post('/api/generate-with-corrections', async (req, res) => {
+  try {
+    const { sessionId, correctedElements } = req.body
+    
+    if (!sessionId || !ocrCache.has(sessionId)) {
+      return res.status(400).json({ error: 'Invalid or expired session' })
+    }
+
+    const { ocrResults, imageCount } = ocrCache.get(sessionId)
+    
+    console.log('Generating test cases with corrected labels...')
+    const testCases = await aiService.generateTestCasesWithCorrections(ocrResults, imageCount, correctedElements)
+    
+    testCases._sessionId = sessionId
+    console.log('AI generated test cases with corrections successfully!')
+    res.json(testCases)
+  } catch (error) {
+    console.error('Error generating test cases with corrections:', error)
+    res.status(500).json({ error: 'Failed to generate test cases with corrections' })
+  }
+})
+
+// Regenerate test cases endpoint
+app.post('/api/regenerate-testcases', async (req, res) => {
+  try {
+    const { sessionId } = req.body
+    
+    if (!sessionId || !ocrCache.has(sessionId)) {
+      return res.status(400).json({ error: 'Invalid or expired session' })
+    }
+
+    const { ocrResults, imageCount } = ocrCache.get(sessionId)
+    
+    console.log('Regenerating test cases with Claude AI...')
+    const testCases = await aiService.generateTestCases(ocrResults, imageCount, true)
+    
+    console.log('AI regenerated test cases successfully!')
+    res.json(testCases)
+  } catch (error) {
+    console.error('Error regenerating test cases:', error)
+    res.status(500).json({ error: 'Failed to regenerate test cases' })
   }
 })
 

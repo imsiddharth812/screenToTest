@@ -61,6 +61,7 @@ start-dev.sh
 check-servers.sh
 dev-*.sh
 local-*.sh
+kill-*.sh
 
 # Logs
 logs/
