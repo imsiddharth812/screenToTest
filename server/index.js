@@ -34,75 +34,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage })
 
-// Mock AI response function
-function generateMockTestCases(ocrResults) {
-  const mockTestCases = {
-    target: [
-      "Verify that the login form accepts valid username and password",
-      "Verify that the main navigation menu displays all required sections",
-      "Verify that the search functionality returns relevant results",
-      "Verify that user can successfully submit the contact form",
-      "Verify that the dashboard displays user-specific information"
-    ],
-    integration: [
-      "Verify that user authentication integrates properly with the database",
-      "Verify that payment processing integrates with third-party payment gateway",
-      "Verify that email notifications are sent after form submission",
-      "Verify that user data synchronizes across different modules",
-      "Verify that API calls return expected responses"
-    ],
-    system: [
-      "Verify that the application handles concurrent user sessions",
-      "Verify that the system performs well under normal load conditions",
-      "Verify that data backup and recovery processes work correctly",
-      "Verify that the application maintains security standards",
-      "Verify that system logs capture all critical events"
-    ],
-    edge: [
-      "Verify application behavior when network connection is lost",
-      "Verify system response when maximum file size is exceeded",
-      "Verify handling of special characters in input fields",
-      "Verify application behavior at exactly midnight",
-      "Verify system response when database connection fails"
-    ],
-    positive: [
-      "User can successfully log in with correct credentials",
-      "User can navigate through all application sections smoothly",
-      "User can save and retrieve data successfully",
-      "User receives confirmation messages for successful actions",
-      "User can access help documentation when needed"
-    ],
-    negative: [
-      "User cannot log in with incorrect credentials",
-      "User cannot submit forms with missing required fields",
-      "User cannot access restricted areas without proper permissions",
-      "User cannot upload files exceeding size limits",
-      "User cannot perform actions without proper authentication"
-    ]
-  }
-
-  // Add OCR-specific test cases based on detected text
-  if (ocrResults && ocrResults.length > 0) {
-    const detectedText = ocrResults.join(' ').toLowerCase()
-
-    if (detectedText.includes('login') || detectedText.includes('sign in')) {
-      mockTestCases.target.unshift("Verify that the login button is clickable and functional")
-      mockTestCases.negative.unshift("Verify that login fails with empty username field")
-    }
-
-    if (detectedText.includes('search')) {
-      mockTestCases.target.unshift("Verify that the search box accepts text input")
-      mockTestCases.edge.unshift("Verify search behavior with extremely long search queries")
-    }
-
-    if (detectedText.includes('submit') || detectedText.includes('send')) {
-      mockTestCases.positive.unshift("User can successfully submit the form with valid data")
-      mockTestCases.negative.unshift("Form submission fails with invalid data format")
-    }
-  }
-
-  return mockTestCases
-}
+// Mock test cases removed - we provide authentic AI-powered analysis only
 
 // OCR processing function
 async function processImageWithOCR(imagePath) {
@@ -136,12 +68,182 @@ app.get('/api/health', (req, res) => {
 // Store OCR results temporarily for regeneration
 const ocrCache = new Map()
 
+// Smart UI Element Filtering Function
+function smartFilterUIElements(ocrText, pageIndex, pageName) {
+  const lines = ocrText.split('\n').filter(line => line.trim().length > 0)
+  const filteredElements = []
+  const seenElements = new Set()
+  
+  // Patterns for different types of UI elements
+  const patterns = {
+    // Interactive elements (high priority)
+    buttons: /\b(button|btn|click|submit|save|create|add|edit|delete|cancel|ok|apply|search|filter|export|import|download|upload|login|logout|signin|signup|register)\b/i,
+    links: /\b(link|navigate|goto|view|details|more|see|show|open)\b/i,
+    formControls: /\b(input|field|textbox|dropdown|select|checkbox|radio|toggle|switch|slider)\b/i,
+    navigation: /\b(menu|nav|home|dashboard|back|next|previous|breadcrumb|tab|page)\b/i,
+    
+    // Data patterns (low priority - group these)
+    emails: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,
+    phones: /\b[\+]?[\d\s\(\)\-\.]{10,}\b/,
+    dates: /\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b|\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{2,4}\b/i,
+    numbers: /^\d+$/,
+    ids: /^\d{4,}$/,
+    
+    // Common data table headers
+    tableHeaders: /\b(name|email|phone|date|created|id|number|status|type|category|description|title|amount|price|quantity|total)\b/i,
+    
+    // Noise patterns (exclude these)
+    timestamps: /\b\d{1,2}:\d{2}(:\d{2})?\s*(AM|PM)?\b/i,
+    commonWords: /\b(the|and|or|but|in|on|at|to|for|of|with|by|from|up|about|into|through|during|before|after|above|below|between|among|this|that|these|those|all|any|some|few|more|most|other|another|such|what|which|who|when|where|why|how)\b/i
+  }
+
+  lines.forEach((line, lineIndex) => {
+    const text = line.trim()
+    if (text.length < 2 || seenElements.has(text.toLowerCase())) {
+      return // Skip empty, short, or duplicate text
+    }
+
+    // Skip obvious noise
+    if (patterns.commonWords.test(text) && text.length < 10) {
+      return
+    }
+
+    // Skip timestamps
+    if (patterns.timestamps.test(text)) {
+      return
+    }
+
+    // Categorize the element
+    let category = 'data'
+    let priority = 3 // Low priority by default
+    let autoLabel = ''
+    let elementType = 'unknown'
+
+    // High priority interactive elements
+    if (patterns.buttons.test(text)) {
+      category = 'interactive'
+      priority = 1
+      elementType = 'button'
+      autoLabel = 'Button: ' + text
+    } else if (patterns.links.test(text) || text.toLowerCase().includes('click')) {
+      category = 'interactive'
+      priority = 1
+      elementType = 'link'
+      autoLabel = 'Link: ' + text
+    } else if (patterns.navigation.test(text)) {
+      category = 'navigation'
+      priority = 1
+      elementType = 'navigation'
+      autoLabel = 'Navigation: ' + text
+    } else if (patterns.formControls.test(text) || text.includes(':') || text.endsWith('*')) {
+      category = 'form'
+      priority = 2
+      elementType = 'form_field'
+      autoLabel = 'Form Field: ' + text.replace('*', ' (Required)')
+    } else if (patterns.tableHeaders.test(text) && text.length < 20) {
+      category = 'structure'
+      priority = 2
+      elementType = 'table_header'
+      autoLabel = 'Table Header: ' + text
+    }
+
+    // Group repetitive data patterns
+    if (patterns.emails.test(text)) {
+      if (!seenElements.has('email_data_group')) {
+        filteredElements.push({
+          id: `${pageIndex}-email-group`,
+          text: 'Email addresses in table',
+          label: autoLabel || 'Table Data: Email Addresses',
+          type: 'table_data',
+          category: 'data',
+          priority: 4,
+          grouped: true,
+          examples: [text]
+        })
+        seenElements.add('email_data_group')
+      }
+      return
+    }
+
+    if (patterns.phones.test(text)) {
+      if (!seenElements.has('phone_data_group')) {
+        filteredElements.push({
+          id: `${pageIndex}-phone-group`,
+          text: 'Phone numbers in table',
+          label: autoLabel || 'Table Data: Phone Numbers',
+          type: 'table_data',
+          category: 'data',
+          priority: 4,
+          grouped: true,
+          examples: [text]
+        })
+        seenElements.add('phone_data_group')
+      }
+      return
+    }
+
+    if (patterns.dates.test(text)) {
+      if (!seenElements.has('date_data_group')) {
+        filteredElements.push({
+          id: `${pageIndex}-date-group`,
+          text: 'Dates in table',
+          label: autoLabel || 'Table Data: Dates',
+          type: 'table_data',
+          category: 'data',
+          priority: 4,
+          grouped: true,
+          examples: [text]
+        })
+        seenElements.add('date_data_group')
+      }
+      return
+    }
+
+    if (patterns.ids.test(text)) {
+      if (!seenElements.has('id_data_group')) {
+        filteredElements.push({
+          id: `${pageIndex}-id-group`,
+          text: 'ID numbers in table',
+          label: autoLabel || 'Table Data: ID Numbers',
+          type: 'table_data',
+          category: 'data',
+          priority: 4,
+          grouped: true,
+          examples: [text]
+        })
+        seenElements.add('id_data_group')
+      }
+      return
+    }
+
+    // Only include individual elements if they're likely to be UI controls or important labels
+    if (category !== 'data' || (text.length <= 50 && !patterns.numbers.test(text))) {
+      filteredElements.push({
+        id: `${pageIndex}-${lineIndex}`,
+        text: text,
+        label: autoLabel,
+        type: elementType,
+        category: category,
+        priority: priority
+      })
+      seenElements.add(text.toLowerCase())
+    }
+  })
+
+  // Sort by priority (1 = highest, 4 = lowest)
+  return filteredElements.sort((a, b) => a.priority - b.priority)
+}
+
 // Routes
 app.post('/api/generate-testcases', upload.any(), async (req, res) => {
   try {
     const files = req.files
-    if (!files || files.length < 3) {
-      return res.status(400).json({ error: 'At least 3 images required' })
+    if (!files || files.length < 1) {
+      return res.status(400).json({ error: 'At least 1 image required' })
+    }
+
+    if (files.length > 25) {
+      return res.status(400).json({ error: 'Maximum 25 images allowed for comprehensive testing' })
     }
 
     console.log(`Processing ${files.length} images...`)
@@ -180,32 +282,6 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
 
     console.log('OCR Results:', ocrResults)
 
-    // Check if this is just OCR processing or full generation
-    if (req.body.ocrOnly === 'true') {
-      // Return OCR results for user review
-      const sessionId = Date.now().toString()
-      ocrCache.set(sessionId, { ocrResults, imageCount: files.length, pageNames })
-      
-      const detectedElements = ocrResults.map((text, index) => {
-        // Extract potential UI elements from OCR text
-        const lines = text.split('\n').filter(line => line.trim().length > 0)
-        return {
-          screenshotIndex: index,
-          detectedTexts: lines.map((line, lineIndex) => ({
-            id: `${index}-${lineIndex}`,
-            text: line.trim(),
-            label: '', // User will fill this
-            type: 'unknown' // User will specify
-          }))
-        }
-      })
-
-      return res.json({
-        sessionId,
-        detectedElements,
-        requiresReview: true
-      })
-    }
 
     // Generate test cases using Claude AI
     const forceRegenerate = req.body.regenerate === 'true'
@@ -222,19 +298,22 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
   } catch (error) {
     console.error('Error generating test cases:', error)
 
-    // Fallback to mock test cases if AI fails
-    console.log('Falling back to mock test cases...')
-    try {
-      const fallbackTestCases = generateMockTestCases(ocrResults || [])
-      res.json({
-        ...fallbackTestCases,
-        _fallback: true,
-        _message: 'AI service unavailable, using fallback test cases'
+    // Check if it's an API overload error (529)
+    if (error.status === 529) {
+      return res.status(503).json({ 
+        error: 'AI service is temporarily overloaded. Please try again in a few moments.',
+        retryAfter: 30,
+        _temporary: true
       })
-    } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError)
-      res.status(500).json({ error: 'Failed to generate test cases' })
     }
+
+    // Return clear error message instead of fake results
+    console.log('AI service failed, returning clear error message')
+    res.status(500).json({ 
+      error: 'AI service is temporarily unavailable. Please try again in a few minutes.',
+      _retry: true,
+      _suggestion: 'Our AI analyzes your actual screenshots to generate relevant test cases. Generic templates would not provide the quality you expect.'
+    })
   }
 })
 

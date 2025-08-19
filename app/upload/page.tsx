@@ -61,8 +61,8 @@ export default function Upload() {
   const handleFiles = (newFiles: File[]) => {
     const imageFiles = newFiles.filter(file => file.type.startsWith('image/'))
     
-    if (files.length + imageFiles.length > 5) {
-      alert('Maximum 5 images allowed')
+    if (files.length + imageFiles.length > 25) {
+      alert('Maximum 25 screenshots allowed for comprehensive testing')
       return
     }
 
@@ -147,8 +147,8 @@ export default function Upload() {
   }
 
   const generateTestCases = async () => {
-    if (files.length < 3) {
-      alert('Please upload at least 3 screenshots')
+    if (files.length < 1) {
+      alert('Please upload at least 1 screenshot to generate test cases')
       return
     }
 
@@ -164,7 +164,6 @@ export default function Upload() {
       // Send page names for better context
       const pageNames = files.map(file => file.customName)
       formData.append('pageNames', JSON.stringify(pageNames))
-      formData.append('ocrOnly', 'true') // Request OCR processing only
 
       const response = await fetch('http://localhost:3001/api/generate-testcases', {
         method: 'POST',
@@ -173,22 +172,27 @@ export default function Upload() {
 
       if (response.ok) {
         const result = await response.json()
+        localStorage.setItem('testCases', JSON.stringify(result))
         
-        if (result.requiresReview) {
-          // Navigate to review step
-          localStorage.setItem('detectionReview', JSON.stringify(result))
-          router.push('/review')
-        } else {
-          // Direct generation (fallback)
-          localStorage.setItem('testCases', JSON.stringify(result))
-          router.push('/results')
-        }
+        // No more fallback messages needed since we removed mock tests
+        
+        router.push('/results')
       } else {
-        throw new Error('Failed to process screenshots')
+        const errorData = await response.json().catch(() => ({}))
+        
+        if (response.status === 503 && errorData._temporary) {
+          alert(`${errorData.error}\n\nThe AI service is experiencing high demand. Please wait ${errorData.retryAfter || 30} seconds and try again.`)
+        } else {
+          throw new Error(errorData.error || 'Failed to process screenshots')
+        }
       }
     } catch (error) {
       console.error('Error:', error)
-      alert('Failed to process screenshots. Please try again.')
+      if (error.message.includes('overloaded') || error.message.includes('temporarily')) {
+        alert('AI service is experiencing high demand. Please wait a moment and try again.')
+      } else {
+        alert('Failed to process screenshots. Please try again.')
+      }
     } finally {
       setIsGenerating(false)
     }
@@ -210,7 +214,7 @@ export default function Upload() {
             <div className="flex items-center justify-center gap-8 text-sm text-gray-500">
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                <span>3-5 Screenshots Required</span>
+                <span>1-25 Screenshots Supported</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
@@ -283,7 +287,7 @@ export default function Upload() {
                       <div className="bg-gray-50 rounded-lg p-3">
                         <p className="text-sm text-gray-600 font-medium">📋 Requirements:</p>
                         <ul className="text-xs text-gray-500 mt-1 space-y-1">
-                          <li>• 3-5 screenshots required</li>
+                          <li>• 1-25 screenshots supported</li>
                           <li>• PNG, JPG, JPEG formats</li>
                           <li>• Clear, readable images</li>
                         </ul>
@@ -307,7 +311,7 @@ export default function Upload() {
                       <div>
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                           <span>🎬</span>
-                          Your User Journey ({files.length}/5)
+                          Your User Journey ({files.length}/25)
                         </h2>
                         <p className="text-green-100 text-sm mt-1">
                           Step 2: Organize your application flow
@@ -315,7 +319,7 @@ export default function Upload() {
                       </div>
                       <div className="text-right">
                         <div className="text-white text-sm">
-                          {files.length >= 3 ? '✅ Ready to process' : `${3 - files.length} more needed`}
+                          {files.length >= 1 ? '✅ Ready to process' : 'Upload screenshots to begin'}
                         </div>
                       </div>
                     </div>
@@ -568,7 +572,7 @@ export default function Upload() {
         </div>
 
         {/* Process Section */}
-        {files.length >= 3 && (
+        {files.length >= 1 && (
           <div className="mt-8">
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
               <div className="bg-gradient-to-r from-green-600 to-teal-600 px-6 py-4">
