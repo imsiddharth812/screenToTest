@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import ProtectedRoute from '../components/ProtectedRoute';
 
 interface TestCase {
   type: string;
@@ -29,7 +30,7 @@ interface TestCases {
   _sessionId?: string;
 }
 
-export default function Results() {
+function Results() {
   const [testCases, setTestCases] = useState<TestCases | null>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -387,5 +388,13 @@ export default function Results() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProtectedResults() {
+  return (
+    <ProtectedRoute>
+      <Results />
+    </ProtectedRoute>
   );
 }

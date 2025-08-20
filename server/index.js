@@ -6,6 +6,9 @@ const Tesseract = require('tesseract.js')
 const { Document, Packer, Paragraph, TextRun } = require('docx')
 const ExcelJS = require('exceljs')
 const fs = require('fs')
+const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
+const sqlite3 = require('sqlite3').verbose()
 const AIService = require('./aiService')
 
 const app = express()
@@ -13,6 +16,54 @@ const PORT = process.env.SERVER_PORT || 3001
 
 // Initialize AI Service
 const aiService = new AIService()
+
+// Initialize SQLite database
+const db = new sqlite3.Database('./database.db', (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message)
+  } else {
+    console.log('Connected to SQLite database')
+    
+    // Create users table if it doesn't exist
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) {
+        console.error('Error creating users table:', err.message)
+      } else {
+        console.log('Database tables created successfully')
+      }
+    })
+  }
+})
+
+// JWT Secret (in production, this should be in environment variables)
+const JWT_SECRET = process.env.JWT_SECRET || 'screen2testcases_jwt_secret_key'
+
+// Authentication middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization']
+  const token = authHeader && authHeader.split(' ')[1]
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' })
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid or expired token' })
+    }
+    req.user = user
+    next()
+  })
+}
 
 // Middleware
 app.use(cors())
@@ -62,6 +113,157 @@ app.get('/api/health', (req, res) => {
     status: 'OK', 
     message: 'Server is running',
     timestamp: new Date().toISOString()
+  })
+})
+
+// Authentication Routes
+
+// Sign up route
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, email, password } = req.body
+
+    // Validate input
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' })
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' })
+    }
+
+    // Check if user already exists
+    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, existingUser) => {
+      if (err) {
+        console.error('Database error:', err.message)
+        return res.status(500).json({ error: 'Database error' })
+      }
+
+      if (existingUser) {
+        return res.status(400).json({ error: 'User with this email already exists' })
+      }
+
+      try {
+        // Hash password
+        const saltRounds = 10
+        const hashedPassword = await bcrypt.hash(password, saltRounds)
+
+        // Insert new user
+        db.run(
+          'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+          [name, email, hashedPassword],
+          function(err) {
+            if (err) {
+              console.error('Error creating user:', err.message)
+              return res.status(500).json({ error: 'Failed to create user' })
+            }
+
+            // Generate JWT token
+            const token = jwt.sign(
+              { userId: this.lastID, email: email },
+              JWT_SECRET,
+              { expiresIn: '24h' }
+            )
+
+            // Return user data (without password) and token
+            const userData = {
+              id: this.lastID,
+              name: name,
+              email: email,
+              created_at: new Date().toISOString()
+            }
+
+            res.status(201).json({
+              message: 'User created successfully',
+              user: userData,
+              token: token
+            })
+          }
+        )
+      } catch (error) {
+        console.error('Error hashing password:', error)
+        res.status(500).json({ error: 'Server error' })
+      }
+    })
+  } catch (error) {
+    console.error('Signup error:', error)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Login route
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' })
+    }
+
+    // Find user by email
+    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
+      if (err) {
+        console.error('Database error:', err.message)
+        return res.status(500).json({ error: 'Database error' })
+      }
+
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid email or password' })
+      }
+
+      try {
+        // Compare password
+        const isPasswordValid = await bcrypt.compare(password, user.password)
+
+        if (!isPasswordValid) {
+          return res.status(401).json({ error: 'Invalid email or password' })
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+          { userId: user.id, email: user.email },
+          JWT_SECRET,
+          { expiresIn: '24h' }
+        )
+
+        // Return user data (without password) and token
+        const userData = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          created_at: user.created_at
+        }
+
+        res.json({
+          message: 'Login successful',
+          user: userData,
+          token: token
+        })
+      } catch (error) {
+        console.error('Error comparing password:', error)
+        res.status(500).json({ error: 'Server error' })
+      }
+    })
+  } catch (error) {
+    console.error('Login error:', error)
+    res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Get current user route (protected)
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  db.get('SELECT id, name, email, created_at FROM users WHERE id = ?', [req.user.userId], (err, user) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    res.json({ user })
   })
 })
 
