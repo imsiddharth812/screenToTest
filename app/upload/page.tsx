@@ -191,7 +191,7 @@ function Upload() {
       }
     } catch (error) {
       console.error('Error:', error)
-      if (error.message.includes('overloaded') || error.message.includes('temporarily')) {
+      if (error instanceof Error && (error.message.includes('overloaded') || error.message.includes('temporarily'))) {
         alert('AI service is experiencing high demand. Please wait a moment and try again.')
       } else {
         alert('Failed to process screenshots. Please try again.')
