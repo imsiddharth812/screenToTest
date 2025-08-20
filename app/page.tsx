@@ -400,7 +400,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       </div>
 
       {/* Main Content */}
-      <div className="flex h-screen pt-[80px]">
+      <div className="flex h-[calc(100vh-80px)] overflow-hidden">
         {/* Sidebar - Only show when projects exist */}
         {projects.length > 0 && (
           <div className="w-80 bg-white border-r border-gray-200 shadow-sm overflow-y-auto">
@@ -1060,7 +1060,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
             </div>
           ) : projects.length === 0 ? (
             // No Projects State
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center h-full -mt-8">
               <div className="text-center max-w-2xl">
                 <div className="text-6xl mb-6">🚀</div>
                 <h2 className="text-4xl font-bold text-gray-900 mb-4">
@@ -1116,7 +1116,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
             </div>
           ) : (
             // Has Projects but No Scenario Selected
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center h-full -mt-8">
               <div className="text-center max-w-2xl">
                 <div className="text-6xl mb-6">📋</div>
                 <h2 className="text-4xl font-bold text-gray-900 mb-4">
