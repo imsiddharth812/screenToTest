@@ -56,22 +56,28 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [maximizedImage, setMaximizedImage] = useState<string | null>(null)
   const [maximizedImageName, setMaximizedImageName] = useState<string>('')
+  const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false)
+  const [showHelpHint, setShowHelpHint] = useState(false)
 
   // Load data on component mount
   useEffect(() => {
     loadProjects()
   }, [])
 
-  // Handle keyboard events for maximized image
+  // Handle keyboard events for maximized image and help panel
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && maximizedImage) {
-        setMaximizedImage(null)
-        setMaximizedImageName('')
+      if (event.key === 'Escape') {
+        if (isHelpPanelOpen) {
+          setIsHelpPanelOpen(false)
+        } else if (maximizedImage) {
+          setMaximizedImage(null)
+          setMaximizedImageName('')
+        }
       }
     }
 
-    if (maximizedImage) {
+    if (maximizedImage || isHelpPanelOpen) {
       document.addEventListener('keydown', handleKeyDown)
       // Prevent body scroll when modal is open
       document.body.style.overflow = 'hidden'
@@ -83,7 +89,30 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       document.removeEventListener('keydown', handleKeyDown)
       document.body.style.overflow = 'unset'
     }
-  }, [maximizedImage])
+  }, [maximizedImage, isHelpPanelOpen])
+
+  // Show help hint when files are first uploaded
+  useEffect(() => {
+    if (files.length === 1 && !showHelpHint) {
+      // Show hint after a short delay when first screenshot is uploaded
+      const timer = setTimeout(() => {
+        setShowHelpHint(true)
+      }, 1000)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [files.length, showHelpHint])
+
+  // Auto-hide help hint after 5 seconds
+  useEffect(() => {
+    if (showHelpHint) {
+      const timer = setTimeout(() => {
+        setShowHelpHint(false)
+      }, 5000)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [showHelpHint])
 
   const loadProjects = async () => {
     try {
@@ -711,7 +740,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
               </div>
             )}
             
-            <div className="space-y-1 overflow-y-auto">
+            <div className="space-y-1 flex-1 overflow-y-auto">
               {projects.map((project) => (
                 <div key={project.id} className="select-none">
                   {/* Project Node */}
@@ -876,6 +905,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                 </div>
               ))}
             </div>
+            
           </div>
         </div>
 
@@ -987,80 +1017,32 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       </p>
                     </div>
 
-                    {/* Instructional Content */}
-                    <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-xl p-4 mb-6">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 text-xl">🧭</span>
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-bold text-blue-900 mb-2">Your User Journey</h3>
-                          <p className="text-sm text-blue-800 mb-3">
-                            Organize your screenshots to represent a complete user flow through your application. 
-                            <strong>Give each page a descriptive name</strong> (like "Login Page", "Dashboard", "User Profile") 
-                            to help AI understand the context and generate more accurate test scenarios.
-                          </p>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                            <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
-                              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                              <span className="font-medium">Click to zoom & inspect</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
-                              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
-                              <span className="font-medium">Drag cards to reorder</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
-                              <span className="w-4 h-4 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center flex-shrink-0">×</span>
-                              <span className="font-medium">Remove unwanted</span>
-                            </div>
-                          </div>
+                    {/* Simplified Flow Bar */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-medium text-gray-900 text-sm flex items-center gap-2">
+                          <span>🔄</span>
+                          Flow: {files.length} {files.length === 1 ? 'Step' : 'Steps'}
+                        </h3>
+                        <div className="text-xs text-gray-500">
+                          Drag cards below to reorder
                         </div>
                       </div>
-                    </div>
-
-                    {/* Flow Visualization */}
-                    <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-6 mb-6">
-                      <h3 className="font-bold text-purple-900 mb-4 flex items-center gap-2">
-                        <span className="text-xl">🔄</span>
-                        Application Flow Sequence
-                      </h3>
-                      <div className="bg-white rounded-lg p-4 shadow-inner">
-                        <div className="flex items-center justify-center gap-3 flex-wrap">
-                          {files.map((file, index) => (
-                            <div key={file.id} className="flex items-center">
-                              <div className="flex flex-col items-center group">
-                                <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg group-hover:shadow-xl transition-all duration-200 transform group-hover:scale-105">
-                                  <div className="text-center">
-                                    <div>Step {index + 1}</div>
-                                    <div className="text-xs opacity-90 mt-1">
-                                      {index === 0 && '🚀 Start'}
-                                      {index === files.length - 1 && index > 0 && '🎯 End'}
-                                      {index > 0 && index < files.length - 1 && '⚡ Process'}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-xs text-purple-700 mt-2 max-w-24 truncate font-medium text-center" title={file.customName}>
-                                  {file.customName}
-                                </div>
-                              </div>
-                              {index < files.length - 1 && (
-                                <div className="mx-3 text-purple-500 animate-pulse">
-                                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                  </svg>
-                                </div>
-                              )}
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {files.map((file, index) => (
+                          <div key={file.id} className="flex items-center flex-shrink-0">
+                            <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded px-2 py-1 text-xs font-medium">
+                              {index + 1}
                             </div>
-                          ))}
-                        </div>
-                        <div className="text-center mt-4">
-                          <p className="text-sm text-purple-700 font-medium">
-                            🎯 This flow represents your user's journey through the application
-                          </p>
-                          <p className="text-xs text-purple-600 mt-1">
-                            Drag the screenshot cards below to reorder this sequence
-                          </p>
-                        </div>
+                            {index < files.length - 1 && (
+                              <div className="mx-1 text-purple-400">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
 
@@ -1307,6 +1289,203 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
             </div>
             <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white px-3 py-1 rounded text-sm shadow-lg">
               Press ESC to close
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Help Button */}
+      <div className="fixed bottom-6 right-6 z-40">
+        {/* Help Hint Tooltip */}
+        {showHelpHint && (
+          <div className="absolute bottom-16 right-0 mb-2 animate-bounce">
+            <div 
+              className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg relative whitespace-nowrap cursor-pointer hover:bg-gray-800 transition-colors"
+              onClick={() => setShowHelpHint(false)}
+            >
+              Need help organizing screenshots? 
+              <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+              <button 
+                className="ml-2 text-gray-300 hover:text-white text-xs"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowHelpHint(false)
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+        
+        <button
+          onClick={() => {
+            setIsHelpPanelOpen(true)
+            setShowHelpHint(false)
+          }}
+          className={`bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center justify-center ${
+            showHelpHint ? 'animate-pulse ring-4 ring-blue-300 ring-opacity-75' : ''
+          }`}
+          title="Show Journey Guide"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Floating Help Panel */}
+      {isHelpPanelOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setIsHelpPanelOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden transform transition-all duration-300 scale-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <span>📋</span>
+                    Journey Guide
+                  </h2>
+                  <p className="text-blue-100 text-sm mt-1">
+                    Learn how to organize your screenshots for better test generation
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsHelpPanelOpen(false)}
+                  className="text-white hover:text-gray-200 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <div className="space-y-6">
+                {/* Your User Journey Section */}
+                <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="text-blue-600 text-xl">🧭</span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-blue-900 mb-3">Your User Journey</h3>
+                      <p className="text-sm text-blue-800 mb-4 leading-relaxed">
+                        Organize your screenshots to represent a complete user flow through your application. 
+                        <strong>Give each page a descriptive name</strong> (like "Login Page", "Dashboard", "User Profile") 
+                        to help AI understand the context and generate more accurate test scenarios.
+                      </p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="flex items-center gap-3 text-blue-700 bg-white rounded-lg px-3 py-3 shadow-sm">
+                          <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                          </svg>
+                          <div>
+                            <div className="font-medium text-sm">Click to Zoom</div>
+                            <div className="text-xs text-blue-600">Inspect screenshots in detail</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-blue-700 bg-white rounded-lg px-3 py-3 shadow-sm">
+                          <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                          </svg>
+                          <div>
+                            <div className="font-medium text-sm">Drag to Reorder</div>
+                            <div className="text-xs text-blue-600">Organize your flow sequence</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-blue-700 bg-white rounded-lg px-3 py-3 shadow-sm">
+                          <div className="w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center flex-shrink-0 font-bold">×</div>
+                          <div>
+                            <div className="font-medium text-sm">Remove Unwanted</div>
+                            <div className="text-xs text-blue-600">Delete unnecessary screenshots</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Flow Visualization */}
+                {files.length > 0 && (
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
+                    <h3 className="font-bold text-purple-900 mb-4 flex items-center gap-2">
+                      <span className="text-xl">🔄</span>
+                      Your Current Flow ({files.length} steps)
+                    </h3>
+                    <div className="bg-white rounded-lg p-4 shadow-inner">
+                      <div className="flex items-center justify-center gap-3 flex-wrap">
+                        {files.map((file, index) => (
+                          <div key={file.id} className="flex items-center">
+                            <div className="flex flex-col items-center group">
+                              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg">
+                                <div className="text-center">
+                                  <div>Step {index + 1}</div>
+                                  <div className="text-xs opacity-90 mt-1">
+                                    {index === 0 && '🚀 Start'}
+                                    {index === files.length - 1 && index > 0 && '🎯 End'}
+                                    {index > 0 && index < files.length - 1 && '⚡ Process'}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-xs text-purple-700 mt-2 max-w-20 truncate font-medium text-center" title={file.customName}>
+                                {file.customName}
+                              </div>
+                            </div>
+                            {index < files.length - 1 && (
+                              <div className="mx-3 text-purple-500">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="text-center mt-4">
+                        <p className="text-sm text-purple-700 font-medium">
+                          🎯 This flow represents your user's journey through the application
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tips Section */}
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4">
+                  <h3 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                    <span>💡</span>
+                    Pro Tips
+                  </h3>
+                  <ul className="space-y-2 text-sm text-amber-800">
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span>Use descriptive names like "User Registration Form" instead of generic terms like "Page 1"</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span>Order screenshots in the sequence a user would naturally follow</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span>Include error states and edge cases for comprehensive test coverage</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-600 mt-0.5">•</span>
+                      <span>1-25 screenshots work best - focus on key user interactions</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
         </div>
