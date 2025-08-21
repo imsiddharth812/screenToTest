@@ -14,6 +14,15 @@ interface TestCase {
   description?: string; // for backward compatibility
 }
 
+interface ScreenshotInfo {
+  id: string;
+  customName: string;
+  originalName: string;
+  preview: string;
+  isExisting?: boolean;
+  screenshotId?: number;
+}
+
 interface TestCases {
   allTestCases?: TestCase[];
   functional?: string[];
@@ -28,6 +37,12 @@ interface TestCases {
   system?: string[];
   positive?: string[];
   _sessionId?: string;
+  // Screenshot information
+  scenarioId?: number;
+  scenarioName?: string;
+  projectName?: string;
+  featureName?: string;
+  screenshots?: ScreenshotInfo[];
 }
 
 function Results() {
@@ -40,6 +55,11 @@ function Results() {
     if (stored) {
       const parsedTestCases = JSON.parse(stored);
       setTestCases(parsedTestCases);
+
+      // If screenshots are missing or have blob URLs, try to refresh them from server
+      if (parsedTestCases.scenarioId && (!parsedTestCases.screenshots || parsedTestCases.screenshots.some((s: ScreenshotInfo) => s.preview.startsWith('blob:')))) {
+        refreshScreenshotsFromServer(parsedTestCases.scenarioId, parsedTestCases);
+      }
 
       // Set initial active tab based on data format
       if (
@@ -69,6 +89,39 @@ function Results() {
       }
     }
   }, []);
+
+  const refreshScreenshotsFromServer = async (scenarioId: number, currentTestCases: TestCases) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`http://localhost:3001/api/screenshots/${scenarioId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const refreshedScreenshots: ScreenshotInfo[] = data.screenshots.map((screenshot: any) => ({
+          id: screenshot.id.toString(),
+          customName: screenshot.custom_name || screenshot.original_name.replace(/\.[^/.]+$/, ''),
+          originalName: screenshot.original_name,
+          preview: `http://localhost:3001/${screenshot.file_path}`,
+          isExisting: true,
+          screenshotId: screenshot.id
+        }));
+
+        const updatedTestCases = {
+          ...currentTestCases,
+          screenshots: refreshedScreenshots
+        };
+
+        setTestCases(updatedTestCases);
+        localStorage.setItem("testCases", JSON.stringify(updatedTestCases));
+      }
+    } catch (error) {
+      console.error('Error refreshing screenshots:', error);
+    }
+  };
 
   const downloadDocx = async () => {
     try {
@@ -246,6 +299,65 @@ function Results() {
             </button>
           </div>
         </div>
+
+        {/* Screenshots Section */}
+        {testCases?.screenshots && testCases.screenshots.length > 0 && (
+          <div className="bg-white rounded-lg shadow mb-6">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Screenshots Used ({testCases.screenshots.length})
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {testCases.projectName} → {testCases.featureName} → {testCases.scenarioName}
+              </p>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                {testCases.screenshots.map((screenshot, index) => (
+                  <div key={screenshot.id} className="bg-gray-50 rounded-lg overflow-hidden">
+                    <div className="aspect-square relative">
+                      <img
+                        src={screenshot.preview}
+                        alt={screenshot.customName}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // If image fails to load, try different URL formats
+                          const target = e.target as HTMLImageElement;
+                          const currentSrc = target.src;
+                          
+                          if (currentSrc.startsWith('blob:')) {
+                            // For blob URLs, we can't recover - these are temporary
+                            console.warn('Blob URL expired for screenshot:', screenshot.customName);
+                            return;
+                          }
+                          
+                          // Try to construct proper server URL if it's not already correct
+                          if (!currentSrc.includes('/screenshots/')) {
+                            // If screenshot has screenshotId, try to load from server
+                            if (screenshot.screenshotId) {
+                              target.src = `http://localhost:3001/screenshots/${screenshot.originalName}`;
+                            }
+                          }
+                        }}
+                      />
+                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                        {index + 1}
+                      </div>
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs font-medium text-gray-900 truncate" title={screenshot.customName}>
+                        {screenshot.customName}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate" title={screenshot.originalName}>
+                        {screenshot.originalName}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-lg shadow">
           <div className="border-b border-gray-200">

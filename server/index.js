@@ -164,6 +164,9 @@ const authenticateToken = (req, res, next) => {
 app.use(cors())
 app.use(express.json())
 
+// Serve static files from screenshots directory
+app.use('/screenshots', express.static('screenshots'))
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {

@@ -333,11 +333,16 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
 
     // Then upload to database
     try {
+      // Get current files state to ensure we use the most up-to-date custom names
+      const currentFiles = files.concat(uploadedFiles)
+      
       for (const uploadedFile of uploadedFiles) {
         const formData = new FormData()
         if (uploadedFile.file) {
+          // Find the current version of this file to get the latest custom name
+          const currentFile = currentFiles.find(f => f.id === uploadedFile.id) || uploadedFile
           formData.append('screenshot', uploadedFile.file)
-          formData.append('description', uploadedFile.customName)
+          formData.append('description', currentFile.customName)
         } else {
           continue // Skip if no file object
         }
@@ -351,7 +356,27 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           body: formData,
         })
 
-        if (!response.ok) {
+        if (response.ok) {
+          // Get the created screenshot data from the server response
+          const createdScreenshot = await response.json()
+          console.log('Screenshot uploaded to database:', createdScreenshot)
+          
+          // Update the local file state with database information
+          setFiles(prevFiles => {
+            const updatedFiles = [...prevFiles]
+            const fileIndex = updatedFiles.findIndex(f => f.id === uploadedFile.id)
+            if (fileIndex !== -1) {
+              console.log(`Updating file state: ${uploadedFile.originalName} -> ID ${createdScreenshot.screenshot.id}`)
+              updatedFiles[fileIndex] = {
+                ...updatedFiles[fileIndex],
+                isExisting: true,
+                screenshotId: createdScreenshot.screenshot.id,
+                preview: `http://localhost:3001/${createdScreenshot.screenshot.file_path}`
+              }
+            }
+            return updatedFiles
+          })
+        } else {
           console.error('Failed to upload screenshot:', uploadedFile.originalName)
           // Don't show error for individual uploads as it might be overwhelming
           // The user can still use the screenshots for test case generation
@@ -438,9 +463,17 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const updateFileName = async (index: number, newName: string) => {
     const fileToUpdate = files[index]
     
-    // If it's an existing screenshot, update in database
+    // Update UI immediately for better UX
+    setFiles(prev => {
+      const newFiles = [...prev]
+      newFiles[index] = { ...newFiles[index], customName: newName }
+      return newFiles
+    })
+    
+    // If it's an existing screenshot with database ID, update in database
     if (fileToUpdate.isExisting && fileToUpdate.screenshotId) {
       try {
+        console.log(`Updating screenshot name in database: ${fileToUpdate.screenshotId} -> "${newName}"`)
         const token = localStorage.getItem('authToken')
         const response = await fetch(`http://localhost:3001/api/screenshots/${fileToUpdate.screenshotId}`, {
           method: 'PUT',
@@ -451,22 +484,26 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           body: JSON.stringify({ description: newName })
         })
         
-        if (!response.ok) {
-          console.error('Failed to update screenshot name in database')
-          // Don't block UI update, just log the error
+        if (response.ok) {
+          console.log('Screenshot name updated successfully in database')
+        } else {
+          console.error('Failed to update screenshot name in database', response.status, response.statusText)
+          // UI is already updated, but log the error
         }
       } catch (error) {
         console.error('Error updating screenshot name:', error)
-        // Don't block UI update, just log the error
+        // UI is already updated, but log the error
       }
+    } else if (!fileToUpdate.isExisting) {
+      // For newly uploaded files that don't have database ID yet,
+      // the name will be saved when the file is uploaded to the database
+      console.log('File name updated for new upload, will be saved on database upload')
+    } else {
+      console.log('Screenshot update skipped - no database ID available', {
+        isExisting: fileToUpdate.isExisting,
+        screenshotId: fileToUpdate.screenshotId
+      })
     }
-
-    // Update UI immediately for better UX
-    setFiles(prev => {
-      const newFiles = [...prev]
-      newFiles[index] = { ...newFiles[index], customName: newName }
-      return newFiles
-    })
   }
 
   const generateTestCases = async () => {
@@ -517,7 +554,23 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
 
       if (response.ok) {
         const result = await response.json()
-        localStorage.setItem('testCases', JSON.stringify(result))
+        // Store screenshot information along with test cases for persistence
+        const testCaseData = {
+          ...result,
+          scenarioId: selectedScenario.id,
+          scenarioName: selectedScenario.name,
+          projectName: selectedProject?.name,
+          featureName: selectedFeature?.name,
+          screenshots: files.map(file => ({
+            id: file.id,
+            customName: file.customName,
+            originalName: file.originalName,
+            preview: file.preview,
+            isExisting: file.isExisting,
+            screenshotId: file.screenshotId
+          }))
+        }
+        localStorage.setItem('testCases', JSON.stringify(testCaseData))
         router.push('/results')
       } else {
         const errorData = await response.json().catch(() => ({}))
