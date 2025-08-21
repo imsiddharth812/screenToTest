@@ -24,22 +24,117 @@ const db = new sqlite3.Database('./database.db', (err) => {
   } else {
     console.log('Connected to SQLite database')
     
-    // Create users table if it doesn't exist
-    db.run(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `, (err) => {
-      if (err) {
-        console.error('Error creating users table:', err.message)
-      } else {
-        console.log('Database tables created successfully')
+    // Create tables if they don't exist
+    const tables = [
+      // Users table (existing)
+      {
+        name: 'users',
+        sql: `
+          CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `
+      },
+      // Projects table
+      {
+        name: 'projects',
+        sql: `
+          CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+          )
+        `
+      },
+      // Features table
+      {
+        name: 'features',
+        sql: `
+          CREATE TABLE IF NOT EXISTS features (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+          )
+        `
+      },
+      // Scenarios table
+      {
+        name: 'scenarios',
+        sql: `
+          CREATE TABLE IF NOT EXISTS scenarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            feature_id INTEGER NOT NULL,
+            name VARCHAR(150) NOT NULL,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (feature_id) REFERENCES features (id) ON DELETE CASCADE
+          )
+        `
+      },
+      // Screenshots table
+      {
+        name: 'screenshots',
+        sql: `
+          CREATE TABLE IF NOT EXISTS screenshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            original_name VARCHAR(255) NOT NULL,
+            custom_name VARCHAR(255),
+            file_path TEXT NOT NULL,
+            file_size INTEGER,
+            order_index INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (scenario_id) REFERENCES scenarios (id) ON DELETE CASCADE
+          )
+        `
       }
+    ]
+
+    // Create tables sequentially
+    let tablesCreated = 0
+    tables.forEach((table, index) => {
+      db.run(table.sql, (err) => {
+        if (err) {
+          console.error(`Error creating ${table.name} table:`, err.message)
+        } else {
+          tablesCreated++
+          console.log(`✓ ${table.name} table created/verified`)
+          if (tablesCreated === tables.length) {
+            console.log('All database tables created successfully')
+            
+            // Create indexes for better performance
+            const indexes = [
+              'CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)',
+              'CREATE INDEX IF NOT EXISTS idx_features_project_id ON features(project_id)', 
+              'CREATE INDEX IF NOT EXISTS idx_scenarios_feature_id ON scenarios(feature_id)',
+              'CREATE INDEX IF NOT EXISTS idx_screenshots_scenario_id ON screenshots(scenario_id)',
+              'CREATE INDEX IF NOT EXISTS idx_screenshots_order ON screenshots(scenario_id, order_index)'
+            ]
+            
+            indexes.forEach(indexSql => {
+              db.run(indexSql, (err) => {
+                if (err) console.error('Error creating index:', err.message)
+              })
+            })
+            console.log('Database indexes created successfully')
+          }
+        }
+      })
     })
   }
 })
@@ -80,6 +175,21 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     cb(null, Date.now() + '-' + file.originalname)
+  }
+})
+
+// Configure multer for persistent screenshot uploads
+const screenshotStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const uploadDir = 'screenshots'
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true })
+    }
+    cb(null, uploadDir)
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, uniqueSuffix + '-' + file.originalname)
   }
 })
 
@@ -264,6 +374,680 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
     }
 
     res.json({ user })
+  })
+})
+
+// PROJECTS CRUD ENDPOINTS
+
+// Get all projects for authenticated user
+app.get('/api/projects', authenticateToken, (req, res) => {
+  const sql = `
+    SELECT p.*, 
+           COUNT(DISTINCT f.id) as feature_count,
+           COUNT(DISTINCT s.id) as scenario_count
+    FROM projects p 
+    LEFT JOIN features f ON p.id = f.project_id 
+    LEFT JOIN scenarios s ON f.id = s.feature_id 
+    WHERE p.user_id = ? 
+    GROUP BY p.id 
+    ORDER BY p.updated_at DESC
+  `
+  
+  db.all(sql, [req.user.userId], (err, projects) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    res.json({ projects })
+  })
+})
+
+// Create new project
+app.post('/api/projects', authenticateToken, (req, res) => {
+  const { name, description } = req.body
+  
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Project name is required' })
+  }
+  
+  if (name.length > 100) {
+    return res.status(400).json({ error: 'Project name must be less than 100 characters' })
+  }
+  
+  if (description && description.length > 500) {
+    return res.status(400).json({ error: 'Project description must be less than 500 characters' })
+  }
+  
+  const sql = 'INSERT INTO projects (user_id, name, description) VALUES (?, ?, ?)'
+  db.run(sql, [req.user.userId, name.trim(), description?.trim() || null], function(err) {
+    if (err) {
+      console.error('Error creating project:', err.message)
+      return res.status(500).json({ error: 'Failed to create project' })
+    }
+    
+    // Return the created project
+    db.get('SELECT * FROM projects WHERE id = ?', [this.lastID], (err, project) => {
+      if (err) {
+        console.error('Error fetching created project:', err.message)
+        return res.status(500).json({ error: 'Project created but failed to retrieve' })
+      }
+      
+      res.status(201).json({ project })
+    })
+  })
+})
+
+// Update project
+app.put('/api/projects/:id', authenticateToken, (req, res) => {
+  const projectId = req.params.id
+  const { name, description } = req.body
+  
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Project name is required' })
+  }
+  
+  if (name.length > 100) {
+    return res.status(400).json({ error: 'Project name must be less than 100 characters' })
+  }
+  
+  if (description && description.length > 500) {
+    return res.status(400).json({ error: 'Project description must be less than 500 characters' })
+  }
+  
+  // First check if project exists and belongs to user
+  db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, req.user.userId], (err, project) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    
+    const sql = 'UPDATE projects SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    db.run(sql, [name.trim(), description?.trim() || null, projectId], function(err) {
+      if (err) {
+        console.error('Error updating project:', err.message)
+        return res.status(500).json({ error: 'Failed to update project' })
+      }
+      
+      // Return the updated project
+      db.get('SELECT * FROM projects WHERE id = ?', [projectId], (err, updatedProject) => {
+        if (err) {
+          console.error('Error fetching updated project:', err.message)
+          return res.status(500).json({ error: 'Project updated but failed to retrieve' })
+        }
+        
+        res.json({ project: updatedProject })
+      })
+    })
+  })
+})
+
+// Delete project
+app.delete('/api/projects/:id', authenticateToken, (req, res) => {
+  const projectId = req.params.id
+  
+  // First check if project exists and belongs to user
+  db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, req.user.userId], (err, project) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    
+    // Delete project (cascading will handle features, scenarios, and screenshots)
+    db.run('DELETE FROM projects WHERE id = ?', [projectId], function(err) {
+      if (err) {
+        console.error('Error deleting project:', err.message)
+        return res.status(500).json({ error: 'Failed to delete project' })
+      }
+      
+      res.json({ message: 'Project deleted successfully' })
+    })
+  })
+})
+
+// FEATURES CRUD ENDPOINTS
+
+// Get all features for a project
+app.get('/api/projects/:projectId/features', authenticateToken, (req, res) => {
+  const projectId = req.params.projectId
+  
+  // First verify project belongs to user
+  db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, req.user.userId], (err, project) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    
+    const sql = `
+      SELECT f.*, 
+             COUNT(DISTINCT s.id) as scenario_count
+      FROM features f 
+      LEFT JOIN scenarios s ON f.id = s.feature_id 
+      WHERE f.project_id = ? 
+      GROUP BY f.id 
+      ORDER BY f.created_at ASC
+    `
+    
+    db.all(sql, [projectId], (err, features) => {
+      if (err) {
+        console.error('Database error:', err.message)
+        return res.status(500).json({ error: 'Database error' })
+      }
+      
+      res.json({ features })
+    })
+  })
+})
+
+// Create new feature
+app.post('/api/projects/:projectId/features', authenticateToken, (req, res) => {
+  const projectId = req.params.projectId
+  const { name, description } = req.body
+  
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Feature name is required' })
+  }
+  
+  if (name.length > 100) {
+    return res.status(400).json({ error: 'Feature name must be less than 100 characters' })
+  }
+  
+  // First verify project belongs to user
+  db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, req.user.userId], (err, project) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' })
+    }
+    
+    const sql = 'INSERT INTO features (project_id, name, description) VALUES (?, ?, ?)'
+    db.run(sql, [projectId, name.trim(), description?.trim() || null], function(err) {
+      if (err) {
+        console.error('Error creating feature:', err.message)
+        return res.status(500).json({ error: 'Failed to create feature' })
+      }
+      
+      // Return the created feature
+      db.get('SELECT * FROM features WHERE id = ?', [this.lastID], (err, feature) => {
+        if (err) {
+          console.error('Error fetching created feature:', err.message)
+          return res.status(500).json({ error: 'Feature created but failed to retrieve' })
+        }
+        
+        res.status(201).json({ feature })
+      })
+    })
+  })
+})
+
+// Update feature
+app.put('/api/features/:id', authenticateToken, (req, res) => {
+  const featureId = req.params.id
+  const { name, description } = req.body
+  
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Feature name is required' })
+  }
+  
+  if (name.length > 100) {
+    return res.status(400).json({ error: 'Feature name must be less than 100 characters' })
+  }
+  
+  // First check if feature exists and project belongs to user
+  const sql = `
+    SELECT f.id FROM features f 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE f.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [featureId, req.user.userId], (err, feature) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!feature) {
+      return res.status(404).json({ error: 'Feature not found' })
+    }
+    
+    const updateSql = 'UPDATE features SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    db.run(updateSql, [name.trim(), description?.trim() || null, featureId], function(err) {
+      if (err) {
+        console.error('Error updating feature:', err.message)
+        return res.status(500).json({ error: 'Failed to update feature' })
+      }
+      
+      // Return the updated feature
+      db.get('SELECT * FROM features WHERE id = ?', [featureId], (err, updatedFeature) => {
+        if (err) {
+          console.error('Error fetching updated feature:', err.message)
+          return res.status(500).json({ error: 'Feature updated but failed to retrieve' })
+        }
+        
+        res.json({ feature: updatedFeature })
+      })
+    })
+  })
+})
+
+// Delete feature
+app.delete('/api/features/:id', authenticateToken, (req, res) => {
+  const featureId = req.params.id
+  
+  // First check if feature exists and project belongs to user
+  const sql = `
+    SELECT f.id FROM features f 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE f.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [featureId, req.user.userId], (err, feature) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!feature) {
+      return res.status(404).json({ error: 'Feature not found' })
+    }
+    
+    // Delete feature (cascading will handle scenarios and screenshots)
+    db.run('DELETE FROM features WHERE id = ?', [featureId], function(err) {
+      if (err) {
+        console.error('Error deleting feature:', err.message)
+        return res.status(500).json({ error: 'Failed to delete feature' })
+      }
+      
+      res.json({ message: 'Feature deleted successfully' })
+    })
+  })
+})
+
+// SCENARIOS CRUD ENDPOINTS
+
+// Get all scenarios for a feature
+app.get('/api/features/:featureId/scenarios', authenticateToken, (req, res) => {
+  const featureId = req.params.featureId
+  
+  // First verify feature exists and project belongs to user
+  const sql = `
+    SELECT f.id FROM features f 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE f.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [featureId, req.user.userId], (err, feature) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!feature) {
+      return res.status(404).json({ error: 'Feature not found' })
+    }
+    
+    const scenarioSql = `
+      SELECT s.*, 
+             COUNT(DISTINCT sc.id) as screenshot_count
+      FROM scenarios s 
+      LEFT JOIN screenshots sc ON s.id = sc.scenario_id 
+      WHERE s.feature_id = ? 
+      GROUP BY s.id 
+      ORDER BY s.created_at ASC
+    `
+    
+    db.all(scenarioSql, [featureId], (err, scenarios) => {
+      if (err) {
+        console.error('Database error:', err.message)
+        return res.status(500).json({ error: 'Database error' })
+      }
+      
+      res.json({ scenarios })
+    })
+  })
+})
+
+// Create new scenario
+app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => {
+  const featureId = req.params.featureId
+  const { name, description } = req.body
+  
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Scenario name is required' })
+  }
+  
+  if (name.length > 150) {
+    return res.status(400).json({ error: 'Scenario name must be less than 150 characters' })
+  }
+  
+  // First verify feature exists and project belongs to user
+  const sql = `
+    SELECT f.id FROM features f 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE f.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [featureId, req.user.userId], (err, feature) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!feature) {
+      return res.status(404).json({ error: 'Feature not found' })
+    }
+    
+    const insertSql = 'INSERT INTO scenarios (feature_id, name, description) VALUES (?, ?, ?)'
+    db.run(insertSql, [featureId, name.trim(), description?.trim() || null], function(err) {
+      if (err) {
+        console.error('Error creating scenario:', err.message)
+        return res.status(500).json({ error: 'Failed to create scenario' })
+      }
+      
+      // Return the created scenario
+      db.get('SELECT * FROM scenarios WHERE id = ?', [this.lastID], (err, scenario) => {
+        if (err) {
+          console.error('Error fetching created scenario:', err.message)
+          return res.status(500).json({ error: 'Scenario created but failed to retrieve' })
+        }
+        
+        res.status(201).json({ scenario })
+      })
+    })
+  })
+})
+
+// Update scenario
+app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
+  const scenarioId = req.params.id
+  const { name, description } = req.body
+  
+  // Validation
+  if (!name || name.trim().length === 0) {
+    return res.status(400).json({ error: 'Scenario name is required' })
+  }
+  
+  if (name.length > 150) {
+    return res.status(400).json({ error: 'Scenario name must be less than 150 characters' })
+  }
+  
+  // First check if scenario exists and project belongs to user
+  const sql = `
+    SELECT s.id FROM scenarios s 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE s.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [scenarioId, req.user.userId], (err, scenario) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found' })
+    }
+    
+    const updateSql = 'UPDATE scenarios SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    db.run(updateSql, [name.trim(), description?.trim() || null, scenarioId], function(err) {
+      if (err) {
+        console.error('Error updating scenario:', err.message)
+        return res.status(500).json({ error: 'Failed to update scenario' })
+      }
+      
+      // Return the updated scenario
+      db.get('SELECT * FROM scenarios WHERE id = ?', [scenarioId], (err, updatedScenario) => {
+        if (err) {
+          console.error('Error fetching updated scenario:', err.message)
+          return res.status(500).json({ error: 'Scenario updated but failed to retrieve' })
+        }
+        
+        res.json({ scenario: updatedScenario })
+      })
+    })
+  })
+})
+
+// Delete scenario
+app.delete('/api/scenarios/:id', authenticateToken, (req, res) => {
+  const scenarioId = req.params.id
+  
+  // First check if scenario exists and project belongs to user
+  const sql = `
+    SELECT s.id FROM scenarios s 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE s.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [scenarioId, req.user.userId], (err, scenario) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found' })
+    }
+    
+    // Delete scenario (cascading will handle screenshots)
+    db.run('DELETE FROM scenarios WHERE id = ?', [scenarioId], function(err) {
+      if (err) {
+        console.error('Error deleting scenario:', err.message)
+        return res.status(500).json({ error: 'Failed to delete scenario' })
+      }
+      
+      res.json({ message: 'Scenario deleted successfully' })
+    })
+  })
+})
+
+// Screenshots CRUD API endpoints
+
+const screenshotUpload = multer({ storage: screenshotStorage })
+
+// Get screenshots for a scenario
+app.get('/api/screenshots/:scenarioId', authenticateToken, (req, res) => {
+  const scenarioId = req.params.scenarioId
+  
+  // First check if scenario exists and project belongs to user
+  const sql = `
+    SELECT s.id FROM scenarios s 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE s.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [scenarioId, req.user.userId], (err, scenario) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found' })
+    }
+    
+    // Get screenshots for the scenario
+    const screenshotsSql = 'SELECT * FROM screenshots WHERE scenario_id = ? ORDER BY created_at ASC'
+    db.all(screenshotsSql, [scenarioId], (err, screenshots) => {
+      if (err) {
+        console.error('Error fetching screenshots:', err.message)
+        return res.status(500).json({ error: 'Failed to fetch screenshots' })
+      }
+      
+      res.json({ screenshots })
+    })
+  })
+})
+
+// Upload screenshot for a scenario
+app.post('/api/screenshots/:scenarioId', authenticateToken, screenshotUpload.single('screenshot'), (req, res) => {
+  const scenarioId = req.params.scenarioId
+  const { description } = req.body
+  
+  if (!req.file) {
+    return res.status(400).json({ error: 'No screenshot file uploaded' })
+  }
+  
+  // First check if scenario exists and project belongs to user
+  const sql = `
+    SELECT s.id FROM scenarios s 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE s.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [scenarioId, req.user.userId], (err, scenario) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found' })
+    }
+    
+    // Insert screenshot record
+    const insertSql = `
+      INSERT INTO screenshots (scenario_id, filename, original_name, custom_name, file_path, file_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `
+    
+    const values = [
+      scenarioId,
+      req.file.filename,
+      req.file.originalname,
+      description?.trim() || req.file.originalname,
+      req.file.path,
+      req.file.size
+    ]
+    
+    db.run(insertSql, values, function(err) {
+      if (err) {
+        console.error('Error saving screenshot:', err.message)
+        return res.status(500).json({ error: 'Failed to save screenshot' })
+      }
+      
+      // Return the created screenshot
+      db.get('SELECT * FROM screenshots WHERE id = ?', [this.lastID], (err, screenshot) => {
+        if (err) {
+          console.error('Error fetching created screenshot:', err.message)
+          return res.status(500).json({ error: 'Screenshot saved but failed to retrieve' })
+        }
+        
+        res.json({ screenshot })
+      })
+    })
+  })
+})
+
+// Update screenshot description
+app.put('/api/screenshots/:id', authenticateToken, (req, res) => {
+  const screenshotId = req.params.id
+  const { description } = req.body
+  
+  // First check if screenshot exists and project belongs to user
+  const sql = `
+    SELECT sc.id FROM screenshots sc
+    JOIN scenarios s ON sc.scenario_id = s.id 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE sc.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [screenshotId, req.user.userId], (err, screenshot) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!screenshot) {
+      return res.status(404).json({ error: 'Screenshot not found' })
+    }
+    
+    const updateSql = 'UPDATE screenshots SET custom_name = ? WHERE id = ?'
+    db.run(updateSql, [description?.trim() || null, screenshotId], function(err) {
+      if (err) {
+        console.error('Error updating screenshot:', err.message)
+        return res.status(500).json({ error: 'Failed to update screenshot' })
+      }
+      
+      // Return the updated screenshot
+      db.get('SELECT * FROM screenshots WHERE id = ?', [screenshotId], (err, updatedScreenshot) => {
+        if (err) {
+          console.error('Error fetching updated screenshot:', err.message)
+          return res.status(500).json({ error: 'Screenshot updated but failed to retrieve' })
+        }
+        
+        res.json({ screenshot: updatedScreenshot })
+      })
+    })
+  })
+})
+
+// Delete screenshot
+app.delete('/api/screenshots/:id', authenticateToken, (req, res) => {
+  const screenshotId = req.params.id
+  
+  // First check if screenshot exists and project belongs to user
+  const sql = `
+    SELECT sc.id, sc.file_path FROM screenshots sc
+    JOIN scenarios s ON sc.scenario_id = s.id 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE sc.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [screenshotId, req.user.userId], (err, screenshot) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!screenshot) {
+      return res.status(404).json({ error: 'Screenshot not found' })
+    }
+    
+    // Delete screenshot from database
+    db.run('DELETE FROM screenshots WHERE id = ?', [screenshotId], function(err) {
+      if (err) {
+        console.error('Error deleting screenshot:', err.message)
+        return res.status(500).json({ error: 'Failed to delete screenshot' })
+      }
+      
+      // Try to delete the physical file
+      try {
+        if (fs.existsSync(screenshot.file_path)) {
+          fs.unlinkSync(screenshot.file_path)
+        }
+      } catch (fileErr) {
+        console.warn('Warning: Could not delete screenshot file:', fileErr.message)
+      }
+      
+      res.json({ message: 'Screenshot deleted successfully' })
+    })
   })
 })
 
