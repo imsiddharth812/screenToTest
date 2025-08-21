@@ -1039,12 +1039,17 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                           💡 Hover steps for details • Drag cards below to reorder
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 overflow-x-auto pb-2">
                         {files.map((file, index) => (
                           <div key={file.id} className="flex items-center flex-shrink-0">
                             <div 
                               className={`bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold cursor-help shadow-lg relative hover-tooltip ${index === 0 ? 'first-step' : ''}`}
                               data-tooltip={`Step ${index + 1}: ${file.customName}`}
+                              onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                e.currentTarget.style.setProperty('--tooltip-x', `${rect.left + rect.width / 2}px`);
+                                e.currentTarget.style.setProperty('--tooltip-y', `${rect.bottom + 8}px`);
+                              }}
                             >
                               {index + 1}
                             </div>
