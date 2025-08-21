@@ -62,6 +62,29 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     loadProjects()
   }, [])
 
+  // Handle keyboard events for maximized image
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && maximizedImage) {
+        setMaximizedImage(null)
+        setMaximizedImageName('')
+      }
+    }
+
+    if (maximizedImage) {
+      document.addEventListener('keydown', handleKeyDown)
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'unset'
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = 'unset'
+    }
+  }, [maximizedImage])
+
   const loadProjects = async () => {
     try {
       setLoading(true)
@@ -506,6 +529,44 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     }
   }
 
+  const handleImageDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleImageDragOver = (e: React.DragEvent, _index: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleImageDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault()
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null)
+      return
+    }
+
+    // Use the moveFile function which has simpler logic
+    moveFile(draggedIndex, dropIndex)
+    setDraggedIndex(null)
+  }
+
+  const handleImageDragEnd = () => {
+    setDraggedIndex(null)
+  }
+
+  const moveFile = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    
+    setFiles(prev => {
+      const newFiles = [...prev]
+      const [movedFile] = newFiles.splice(fromIndex, 1)
+      newFiles.splice(toIndex, 0, movedFile)
+      return newFiles
+    })
+  }
+
   const generateTestCases = async () => {
     if (files.length < 1) {
       alert('Please upload at least 1 screenshot to generate test cases')
@@ -926,39 +987,226 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       </p>
                     </div>
 
-                    {/* Files Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {/* Instructional Content */}
+                    <div className="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-xl p-4 mb-6">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <span className="text-blue-600 text-xl">🧭</span>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-bold text-blue-900 mb-2">Your User Journey</h3>
+                          <p className="text-sm text-blue-800 mb-3">
+                            Organize your screenshots to represent a complete user flow through your application. 
+                            <strong>Give each page a descriptive name</strong> (like "Login Page", "Dashboard", "User Profile") 
+                            to help AI understand the context and generate more accurate test scenarios.
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                            <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                              <span className="font-medium">Click to zoom & inspect</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+                              <span className="font-medium">Drag cards to reorder</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-blue-700 bg-white rounded-lg px-3 py-2">
+                              <span className="w-4 h-4 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center flex-shrink-0">×</span>
+                              <span className="font-medium">Remove unwanted</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Flow Visualization */}
+                    <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-6 mb-6">
+                      <h3 className="font-bold text-purple-900 mb-4 flex items-center gap-2">
+                        <span className="text-xl">🔄</span>
+                        Application Flow Sequence
+                      </h3>
+                      <div className="bg-white rounded-lg p-4 shadow-inner">
+                        <div className="flex items-center justify-center gap-3 flex-wrap">
+                          {files.map((file, index) => (
+                            <div key={file.id} className="flex items-center">
+                              <div className="flex flex-col items-center group">
+                                <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg group-hover:shadow-xl transition-all duration-200 transform group-hover:scale-105">
+                                  <div className="text-center">
+                                    <div>Step {index + 1}</div>
+                                    <div className="text-xs opacity-90 mt-1">
+                                      {index === 0 && '🚀 Start'}
+                                      {index === files.length - 1 && index > 0 && '🎯 End'}
+                                      {index > 0 && index < files.length - 1 && '⚡ Process'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-purple-700 mt-2 max-w-24 truncate font-medium text-center" title={file.customName}>
+                                  {file.customName}
+                                </div>
+                              </div>
+                              {index < files.length - 1 && (
+                                <div className="mx-3 text-purple-500 animate-pulse">
+                                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-center mt-4">
+                          <p className="text-sm text-purple-700 font-medium">
+                            🎯 This flow represents your user's journey through the application
+                          </p>
+                          <p className="text-xs text-purple-600 mt-1">
+                            Drag the screenshot cards below to reorder this sequence
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enhanced Screenshot Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                       {files.map((file, index) => (
-                        <div key={file.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                          {/* Image */}
-                          <div className="relative aspect-square">
-                            <img
-                              src={file.preview}
-                              alt={file.customName}
-                              className="w-full h-full object-cover cursor-pointer"
-                              onClick={() => {
+                        <div 
+                          key={file.id} 
+                          className={`group relative bg-white border-2 rounded-xl shadow-sm transition-all duration-200 hover:shadow-md cursor-move ${
+                            draggedIndex === index 
+                              ? 'border-blue-500 bg-blue-50 opacity-75 transform rotate-1 scale-105' 
+                              : 'border-gray-200 hover:border-blue-300'
+                          }`}
+                          draggable
+                          onDragStart={(e) => handleImageDragStart(e, index)}
+                          onDragOver={(e) => handleImageDragOver(e, index)}
+                          onDrop={(e) => handleImageDrop(e, index)}
+                          onDragEnd={handleImageDragEnd}
+                        >
+                          {/* Header with controls */}
+                          <div className="p-3 pb-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className="bg-blue-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold">
+                                  {index + 1}
+                                </div>
+                                <span className="text-xs text-gray-500 truncate max-w-24" title={file.originalName}>
+                                  {file.originalName}
+                                </span>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFile(index);
+                                }}
+                                className="bg-red-500 hover:bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm transition-colors shadow-sm"
+                                title="Remove screenshot"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            
+                            {/* Editable Name Field */}
+                            <div className="mt-2">
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                📝 Page Description:
+                              </label>
+                              <input
+                                type="text"
+                                value={file.customName}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  updateFileName(index, e.target.value);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                placeholder="e.g., Login Page, Dashboard, User Profile..."
+                                title="Use descriptive names like 'Client Registration Form' or 'Invoice Dashboard' - these names will appear in your test cases instead of generic screenshot references"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Image container */}
+                          <div className="relative mx-3 mb-3">
+                            <div 
+                              className="relative cursor-pointer rounded-lg overflow-hidden border border-gray-100"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setMaximizedImage(file.preview);
                                 setMaximizedImageName(file.customName);
                               }}
-                            />
-                            <button
-                              onClick={() => removeFile(index)}
-                              className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold transition-colors"
-                              title="Remove"
                             >
-                              ×
-                            </button>
+                              <img
+                                src={file.preview}
+                                alt={`Screenshot ${index + 1}`}
+                                className="w-full h-40 object-cover transition-transform duration-200 group-hover:scale-105"
+                                draggable={false}
+                              />
+                              {/* Maximize indicator */}
+                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white bg-opacity-90 rounded-full p-2">
+                                  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                  </svg>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Flow indicator - positioned over bottom of image */}
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent rounded-b-lg">
+                              <div className="px-3 py-2">
+                                <div className="flex items-center justify-between text-white">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <span className="text-blue-300">📱</span>
+                                    <div className="flex flex-col min-w-0">
+                                      <span className="text-xs font-medium">Step {index + 1}</span>
+                                      <span className="text-[10px] opacity-90 truncate" title={file.customName}>
+                                        {file.customName}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs opacity-75 ml-2">
+                                    {index === 0 && "Start"}
+                                    {index === files.length - 1 && index > 0 && "End"}
+                                    {index > 0 && index < files.length - 1 && "→"}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          
-                          {/* File Name */}
-                          <div className="p-2">
-                            <input
-                              type="text"
-                              value={file.customName}
-                              onChange={(e) => updateFileName(index, e.target.value)}
-                              className="w-full text-sm px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="Screenshot name"
-                            />
+
+                          {/* Footer with drag handle and reorder buttons */}
+                          <div className="flex items-center justify-between px-3 pb-3">
+                            <div className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition-colors">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                              </svg>
+                              <span className="text-xs font-medium">Drag anywhere to reorder</span>
+                            </div>
+                            
+                            <div className="flex gap-1">
+                              {index > 0 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveFile(index, index - 1);
+                                  }}
+                                  className="bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full w-7 h-7 flex items-center justify-center text-sm transition-colors"
+                                  title="Move up"
+                                >
+                                  ↑
+                                </button>
+                              )}
+                              {index < files.length - 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveFile(index, index + 1);
+                                  }}
+                                  className="bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full w-7 h-7 flex items-center justify-center text-sm transition-colors"
+                                  title="Move down"
+                                >
+                                  ↓
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1035,7 +1283,10 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
             setMaximizedImageName('');
           }}
         >
-          <div className="relative max-w-full max-h-full">
+          <div 
+            className="relative max-w-full max-h-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <img
               src={maximizedImage}
               alt={maximizedImageName}
@@ -1046,12 +1297,16 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                 setMaximizedImage(null);
                 setMaximizedImageName('');
               }}
-              className="absolute top-4 right-4 bg-red-500 hover:bg-red-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg transition-colors"
+              className="absolute top-4 right-4 bg-red-500 hover:bg-red-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg transition-colors shadow-lg"
+              title="Close (ESC)"
             >
               ×
             </button>
-            <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg">
+            <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg shadow-lg">
               {maximizedImageName}
+            </div>
+            <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white px-3 py-1 rounded text-sm shadow-lg">
+              Press ESC to close
             </div>
           </div>
         </div>
