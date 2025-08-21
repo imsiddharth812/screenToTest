@@ -1044,7 +1044,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                           <div key={file.id} className="flex items-center flex-shrink-0">
                             <div 
                               className={`bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold cursor-help shadow-lg relative hover-tooltip ${index === 0 ? 'first-step' : ''}`}
-                              data-tooltip={`Step ${index + 1}: ${file.customName}`}
+                              data-tooltip={file.customName}
                               onMouseEnter={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 e.currentTarget.style.setProperty('--tooltip-x', `${rect.left + rect.width / 2}px`);
@@ -1474,8 +1474,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                 </div>
                                 {/* Tooltip */}
                                 <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 max-w-xs">
-                                  <div className="font-medium">Step {index + 1}:</div>
-                                  <div className="text-xs mt-1">{file.customName}</div>
+                                  <div className="font-medium">{file.customName}</div>
                                   <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                                 </div>
                               </div>
