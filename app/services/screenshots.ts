@@ -51,6 +51,10 @@ export const screenshotsApi = {
 
   // Get screenshot file URL
   getFileUrl: (screenshot: Screenshot): string => {
-    return `http://localhost:3001/${screenshot.file_path}`
+    // Remove 'screenshots/' prefix if present since the route already handles it
+    const filename = screenshot.file_path.startsWith('screenshots/') 
+      ? screenshot.file_path.substring('screenshots/'.length)
+      : screenshot.file_path
+    return `http://localhost:3001/screenshots/${filename}`
   },
 }

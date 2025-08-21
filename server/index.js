@@ -6,6 +6,7 @@ const Tesseract = require('tesseract.js')
 const { Document, Packer, Paragraph, TextRun } = require('docx')
 const ExcelJS = require('exceljs')
 const fs = require('fs')
+const path = require('path')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const sqlite3 = require('sqlite3').verbose()
@@ -23,6 +24,15 @@ const db = new sqlite3.Database('./database.db', (err) => {
     console.error('Error opening database:', err.message)
   } else {
     console.log('Connected to SQLite database')
+    
+    // Enable foreign keys for cascade deletion
+    db.run('PRAGMA foreign_keys = ON', (err) => {
+      if (err) {
+        console.error('Error enabling foreign keys:', err.message)
+      } else {
+        console.log('Foreign keys enabled for cascade deletion')
+      }
+    })
     
     // Create tables if they don't exist
     const tables = [
@@ -164,8 +174,8 @@ const authenticateToken = (req, res, next) => {
 app.use(cors())
 app.use(express.json())
 
-// Serve static files from screenshots directory
-app.use('/screenshots', express.static('screenshots'))
+// Serve static files from screenshots directory (using path.join for cross-platform compatibility)
+app.use('/screenshots', express.static(path.join(__dirname, '..', 'screenshots')))
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -506,14 +516,44 @@ app.delete('/api/projects/:id', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Project not found' })
     }
     
-    // Delete project (cascading will handle features, scenarios, and screenshots)
-    db.run('DELETE FROM projects WHERE id = ?', [projectId], function(err) {
+    // Get all screenshot files for this project before deletion
+    const screenshotsSql = `
+      SELECT sc.file_path 
+      FROM screenshots sc
+      JOIN scenarios s ON sc.scenario_id = s.id
+      JOIN features f ON s.feature_id = f.id
+      WHERE f.project_id = ?
+    `
+    
+    db.all(screenshotsSql, [projectId], (err, screenshots) => {
       if (err) {
-        console.error('Error deleting project:', err.message)
-        return res.status(500).json({ error: 'Failed to delete project' })
+        console.error('Error fetching screenshots for project deletion:', err.message)
+        return res.status(500).json({ error: 'Database error' })
       }
       
-      res.json({ message: 'Project deleted successfully' })
+      // Delete project (cascading will handle features, scenarios, and screenshot records)
+      db.run('DELETE FROM projects WHERE id = ?', [projectId], function(err) {
+        if (err) {
+          console.error('Error deleting project:', err.message)
+          return res.status(500).json({ error: 'Failed to delete project' })
+        }
+        
+        // Clean up screenshot files from filesystem
+        screenshots.forEach(screenshot => {
+          try {
+            const fullPath = path.join(__dirname, '..', screenshot.file_path)
+            if (fs.existsSync(fullPath)) {
+              fs.unlinkSync(fullPath)
+              console.log(`Deleted screenshot file: ${screenshot.file_path}`)
+            }
+          } catch (fileErr) {
+            console.warn(`Warning: Could not delete screenshot file ${screenshot.file_path}:`, fileErr.message)
+          }
+        })
+        
+        console.log(`Deleted project ${projectId} and ${screenshots.length} associated screenshot files`)
+        res.json({ message: 'Project deleted successfully' })
+      })
     })
   })
 })
@@ -673,14 +713,43 @@ app.delete('/api/features/:id', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Feature not found' })
     }
     
-    // Delete feature (cascading will handle scenarios and screenshots)
-    db.run('DELETE FROM features WHERE id = ?', [featureId], function(err) {
+    // Get all screenshot files for this feature before deletion
+    const screenshotsSql = `
+      SELECT sc.file_path 
+      FROM screenshots sc
+      JOIN scenarios s ON sc.scenario_id = s.id
+      WHERE s.feature_id = ?
+    `
+    
+    db.all(screenshotsSql, [featureId], (err, screenshots) => {
       if (err) {
-        console.error('Error deleting feature:', err.message)
-        return res.status(500).json({ error: 'Failed to delete feature' })
+        console.error('Error fetching screenshots for feature deletion:', err.message)
+        return res.status(500).json({ error: 'Database error' })
       }
       
-      res.json({ message: 'Feature deleted successfully' })
+      // Delete feature (cascading will handle scenarios and screenshot records)
+      db.run('DELETE FROM features WHERE id = ?', [featureId], function(err) {
+        if (err) {
+          console.error('Error deleting feature:', err.message)
+          return res.status(500).json({ error: 'Failed to delete feature' })
+        }
+        
+        // Clean up screenshot files from filesystem
+        screenshots.forEach(screenshot => {
+          try {
+            const fullPath = path.join(__dirname, '..', screenshot.file_path)
+            if (fs.existsSync(fullPath)) {
+              fs.unlinkSync(fullPath)
+              console.log(`Deleted screenshot file: ${screenshot.file_path}`)
+            }
+          } catch (fileErr) {
+            console.warn(`Warning: Could not delete screenshot file ${screenshot.file_path}:`, fileErr.message)
+          }
+        })
+        
+        console.log(`Deleted feature ${featureId} and ${screenshots.length} associated screenshot files`)
+        res.json({ message: 'Feature deleted successfully' })
+      })
     })
   })
 })
@@ -854,14 +923,36 @@ app.delete('/api/scenarios/:id', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Scenario not found' })
     }
     
-    // Delete scenario (cascading will handle screenshots)
-    db.run('DELETE FROM scenarios WHERE id = ?', [scenarioId], function(err) {
+    // First get all screenshot files for this scenario to clean up from filesystem
+    db.all('SELECT file_path FROM screenshots WHERE scenario_id = ?', [scenarioId], (err, screenshots) => {
       if (err) {
-        console.error('Error deleting scenario:', err.message)
-        return res.status(500).json({ error: 'Failed to delete scenario' })
+        console.error('Error fetching screenshots for deletion:', err.message)
+        return res.status(500).json({ error: 'Database error' })
       }
       
-      res.json({ message: 'Scenario deleted successfully' })
+      // Delete scenario (foreign key cascade will delete screenshot records)
+      db.run('DELETE FROM scenarios WHERE id = ?', [scenarioId], function(err) {
+        if (err) {
+          console.error('Error deleting scenario:', err.message)
+          return res.status(500).json({ error: 'Failed to delete scenario' })
+        }
+        
+        // Clean up screenshot files from filesystem
+        screenshots.forEach(screenshot => {
+          try {
+            const fullPath = path.join(__dirname, '..', screenshot.file_path)
+            if (fs.existsSync(fullPath)) {
+              fs.unlinkSync(fullPath)
+              console.log(`Deleted screenshot file: ${screenshot.file_path}`)
+            }
+          } catch (fileErr) {
+            console.warn(`Warning: Could not delete screenshot file ${screenshot.file_path}:`, fileErr.message)
+          }
+        })
+        
+        console.log(`Deleted scenario ${scenarioId} and ${screenshots.length} associated screenshot files`)
+        res.json({ message: 'Scenario deleted successfully' })
+      })
     })
   })
 })

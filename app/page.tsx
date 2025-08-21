@@ -216,29 +216,40 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     // Load existing screenshots for this scenario
     try {
       const token = localStorage.getItem('authToken')
+      console.log(`Fetching screenshots for scenario ${scenario.id}`)
       const response = await fetch(`http://localhost:3001/api/screenshots/${scenario.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
       
+      console.log('Response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
+        console.log('Loaded screenshots from database:', data.screenshots)
         // Convert database screenshots to UploadedFile format for display
-        const existingFiles: UploadedFile[] = data.screenshots.map((screenshot: any) => ({
-          id: screenshot.id.toString(),
-          file: null, // Not needed for display
-          preview: `http://localhost:3001/${screenshot.file_path}`,
-          originalName: screenshot.original_name,
-          customName: screenshot.custom_name || screenshot.original_name.replace(/\.[^/.]+$/, ''),
-          isExisting: true, // Flag to identify existing screenshots
-          screenshotId: screenshot.id // Store database ID
-        }))
+        const existingFiles: UploadedFile[] = data.screenshots.map((screenshot: any) => {
+          const previewUrl = screenshot.file_path.startsWith('http') ? screenshot.file_path : `http://localhost:3001/${screenshot.file_path}`
+          console.log(`Screenshot ${screenshot.id}: ${screenshot.original_name} -> ${previewUrl}`)
+          return {
+            id: screenshot.id.toString(),
+            file: null, // Not needed for display
+            preview: previewUrl,
+            originalName: screenshot.original_name,
+            customName: screenshot.custom_name || screenshot.original_name.replace(/\.[^/.]+$/, ''),
+            isExisting: true, // Flag to identify existing screenshots
+            screenshotId: screenshot.id // Store database ID
+          }
+        })
         
+        console.log('Converted to files:', existingFiles)
         setFiles(existingFiles)
       } else {
         // Even if API call fails, keep the scenario selected and just clear files
-        console.log('Failed to fetch screenshots, but scenario is still selected')
+        console.log('Failed to fetch screenshots, status:', response.status)
+        const errorText = await response.text()
+        console.log('Error response:', errorText)
         setFiles([])
       }
     } catch (error) {
@@ -1018,21 +1029,31 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                     </div>
 
                     {/* Simplified Flow Bar */}
-                    <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
+                    <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4 overflow-visible">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-medium text-gray-900 text-sm flex items-center gap-2">
                           <span>🔄</span>
                           Flow: {files.length} {files.length === 1 ? 'Step' : 'Steps'}
                         </h3>
                         <div className="text-xs text-gray-500">
-                          Drag cards below to reorder
+                          💡 Hover steps for details • Drag cards below to reorder
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 overflow-visible">
                         {files.map((file, index) => (
                           <div key={file.id} className="flex items-center flex-shrink-0">
-                            <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded px-2 py-1 text-xs font-medium">
-                              {index + 1}
+                            <div className="relative group">
+                              <div 
+                                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold cursor-help shadow-lg"
+                              >
+                                {index + 1}
+                                {/* Tooltip - positioned to appear in the padding space */}
+                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[999] max-w-xs shadow-lg">
+                                  <div className="font-medium">Step {index + 1}:</div>
+                                  <div className="text-xs mt-1">{file.customName}</div>
+                                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                </div>
+                              </div>
                             </div>
                             {index < files.length - 1 && (
                               <div className="mx-1 text-purple-400">
@@ -1120,6 +1141,21 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                 alt={`Screenshot ${index + 1}`}
                                 className="w-full h-40 object-cover transition-transform duration-200 group-hover:scale-105"
                                 draggable={false}
+                                onError={(e) => {
+                                  console.error('Failed to load image:', file.preview)
+                                  console.error('File details:', file)
+                                  // Test if we can reach the URL
+                                  fetch(file.preview)
+                                    .then(response => console.log('Direct fetch result:', response.status, response.statusText))
+                                    .catch(err => console.error('Direct fetch error:', err))
+                                  
+                                  // Show a placeholder or keep the broken image
+                                  e.currentTarget.style.backgroundColor = '#f3f4f6'
+                                  e.currentTarget.style.display = 'flex'
+                                  e.currentTarget.style.alignItems = 'center'
+                                  e.currentTarget.style.justifyContent = 'center'
+                                  e.currentTarget.innerHTML = '<div class="text-gray-500 text-sm text-center p-4">Image failed to load<br><span class="text-xs">' + file.originalName + '</span><br><span class="text-xs text-red-500">' + file.preview + '</span></div>'
+                                }}
                               />
                               {/* Maximize indicator */}
                               <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
@@ -1329,7 +1365,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           title="Show Journey Guide"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
           </svg>
         </button>
       </div>
@@ -1426,8 +1462,10 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       <div className="flex items-center justify-center gap-3 flex-wrap">
                         {files.map((file, index) => (
                           <div key={file.id} className="flex items-center">
-                            <div className="flex flex-col items-center group">
-                              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg">
+                            <div className="flex flex-col items-center group relative">
+                              <div 
+                                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg cursor-help"
+                              >
                                 <div className="text-center">
                                   <div>Step {index + 1}</div>
                                   <div className="text-xs opacity-90 mt-1">
@@ -1436,8 +1474,14 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                     {index > 0 && index < files.length - 1 && '⚡ Process'}
                                   </div>
                                 </div>
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 max-w-xs">
+                                  <div className="font-medium">Step {index + 1}:</div>
+                                  <div className="text-xs mt-1">{file.customName}</div>
+                                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                </div>
                               </div>
-                              <div className="text-xs text-purple-700 mt-2 max-w-20 truncate font-medium text-center" title={file.customName}>
+                              <div className="text-xs text-purple-700 mt-2 max-w-20 truncate font-medium text-center">
                                 {file.customName}
                               </div>
                             </div>
@@ -1454,6 +1498,9 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       <div className="text-center mt-4">
                         <p className="text-sm text-purple-700 font-medium">
                           🎯 This flow represents your user's journey through the application
+                        </p>
+                        <p className="text-xs text-purple-600 mt-1">
+                          💡 Hover over steps above to see page descriptions
                         </p>
                       </div>
                     </div>
