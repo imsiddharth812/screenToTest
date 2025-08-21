@@ -1043,7 +1043,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                         {files.map((file, index) => (
                           <div key={file.id} className="flex items-center flex-shrink-0">
                             <div 
-                              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold cursor-help shadow-lg relative hover-tooltip"
+                              className={`bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl px-4 py-2 text-sm font-bold cursor-help shadow-lg relative hover-tooltip ${index === 0 ? 'first-step' : ''}`}
                               data-tooltip={`Step ${index + 1}: ${file.customName}`}
                             >
                               {index + 1}

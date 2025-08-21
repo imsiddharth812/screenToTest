@@ -25,7 +25,7 @@ html, body {
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
-  z-index: 1000;
+  z-index: 1001;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
@@ -37,5 +37,16 @@ html, body {
   transform: translateX(-50%);
   border: 4px solid transparent;
   border-top-color: #374151;
-  z-index: 1000;
+  z-index: 1001;
+}
+
+/* Special positioning for first tooltip to avoid sidebar overlap */
+.hover-tooltip.first-step:hover::after {
+  left: 0;
+  transform: translateX(0);
+}
+
+.hover-tooltip.first-step:hover::before {
+  left: 20px;
+  transform: translateX(-50%);
 }
