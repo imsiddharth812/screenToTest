@@ -11,12 +11,14 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const sqlite3 = require('sqlite3').verbose()
 const AIService = require('./aiService')
+const VisionAIService = require('./visionAIService')
 
 const app = express()
 const PORT = process.env.SERVER_PORT || 3001
 
 // Initialize AI Service
 const aiService = new AIService()
+const visionAIService = new VisionAIService()
 
 // Initialize SQLite database
 const db = new sqlite3.Database('./database.db', (err) => {
@@ -1440,6 +1442,144 @@ app.post('/api/regenerate-testcases', async (req, res) => {
     console.error('Error regenerating test cases:', error)
     res.status(500).json({ error: 'Failed to regenerate test cases' })
   }
+})
+
+// HYBRID APPROACH - New endpoints for different analysis types
+
+// Vision AI analysis endpoint
+app.post('/api/generate-testcases-vision', upload.any(), async (req, res) => {
+  try {
+    console.log('Processing Vision AI test case generation request...')
+    
+    // Extract screenshot paths and page names
+    const { pageNames } = req.body
+    const pageNamesArray = pageNames ? JSON.parse(pageNames) : []
+    
+    // Get screenshot file paths
+    const screenshotPaths = []
+    for (const file of req.files || []) {
+      if (file.mimetype.startsWith('image/')) {
+        screenshotPaths.push(file.path)
+      }
+    }
+
+    if (screenshotPaths.length === 0) {
+      return res.status(400).json({ error: 'No valid screenshot files provided' })
+    }
+
+    console.log(`Processing ${screenshotPaths.length} screenshots with Vision AI...`)
+    
+    const testCases = await visionAIService.generateTestCasesWithVision(
+      screenshotPaths,
+      pageNamesArray,
+      false // forceRegenerate
+    )
+
+    console.log('Vision AI generated test cases successfully!')
+    res.json(testCases)
+  } catch (error) {
+    console.error('Error generating Vision AI test cases:', error)
+    res.status(500).json({ 
+      error: 'Failed to generate test cases with Vision AI',
+      details: error.message 
+    })
+  }
+})
+
+// Comprehensive analysis endpoint (OCR + Vision AI)
+app.post('/api/generate-testcases-comprehensive', upload.any(), async (req, res) => {
+  try {
+    console.log('Processing Comprehensive (OCR + Vision AI) test case generation request...')
+    
+    const { pageNames } = req.body
+    const pageNamesArray = pageNames ? JSON.parse(pageNames) : []
+    
+    // Process OCR first (reuse existing logic)
+    const ocrResults = []
+    const screenshotPaths = []
+    
+    for (const file of req.files || []) {
+      if (file.mimetype.startsWith('image/')) {
+        screenshotPaths.push(file.path)
+        
+        // Perform OCR
+        try {
+          const { data: { text } } = await Tesseract.recognize(file.path, 'eng', {
+            logger: m => console.log(m)
+          })
+          ocrResults.push(text || 'No text detected')
+        } catch (ocrError) {
+          console.warn(`OCR failed for ${file.originalname}:`, ocrError.message)
+          ocrResults.push('OCR processing failed')
+        }
+      }
+    }
+
+    if (screenshotPaths.length === 0) {
+      return res.status(400).json({ error: 'No valid screenshot files provided' })
+    }
+
+    console.log(`Processing ${screenshotPaths.length} screenshots with Comprehensive analysis...`)
+    
+    // Generate both OCR-based and Vision AI test cases
+    const [ocrTestCases, visionTestCases] = await Promise.all([
+      aiService.generateTestCases(ocrResults, screenshotPaths.length, false, pageNamesArray),
+      visionAIService.generateTestCasesWithVision(screenshotPaths, pageNamesArray, false)
+    ])
+
+    // Combine and deduplicate test cases
+    const combinedTestCases = {
+      allTestCases: [
+        ...ocrTestCases.allTestCases.map(tc => ({...tc, source: 'OCR Analysis'})),
+        ...visionTestCases.allTestCases.map(tc => ({...tc, source: 'Vision AI Analysis'}))
+      ],
+      functional: [...(ocrTestCases.functional || []), ...(visionTestCases.functional || [])],
+      endToEnd: [...(ocrTestCases.endToEnd || []), ...(visionTestCases.endToEnd || [])],
+      integration: [...(ocrTestCases.integration || []), ...(visionTestCases.integration || [])],
+      ui: [...(ocrTestCases.ui || []), ...(visionTestCases.ui || [])]
+    }
+
+    console.log('Comprehensive analysis completed successfully!')
+    res.json(combinedTestCases)
+  } catch (error) {
+    console.error('Error generating Comprehensive test cases:', error)
+    res.status(500).json({ 
+      error: 'Failed to generate comprehensive test cases',
+      details: error.message 
+    })
+  }
+})
+
+// Analysis options endpoint - returns available analysis types
+app.get('/api/analysis-options', (req, res) => {
+  res.json({
+    options: [
+      {
+        id: 'standard',
+        name: 'Standard Analysis',
+        description: 'OCR-based text extraction and analysis',
+        features: ['Fast processing', 'Cost-effective', 'Text-focused testing'],
+        estimatedCost: 'Low',
+        processingTime: 'Fast (30-60 seconds)'
+      },
+      {
+        id: 'vision',
+        name: 'Premium Vision Analysis', 
+        description: 'Advanced AI vision analysis of UI layouts and interactions',
+        features: ['Visual layout testing', 'UI component analysis', 'Enhanced accuracy', 'Visual validation'],
+        estimatedCost: 'Medium',
+        processingTime: 'Medium (60-120 seconds)'
+      },
+      {
+        id: 'comprehensive',
+        name: 'Comprehensive Analysis',
+        description: 'Combined OCR and Vision AI for maximum coverage',
+        features: ['Complete coverage', 'Text + Visual analysis', 'Detailed test cases', 'Maximum accuracy'],
+        estimatedCost: 'High', 
+        processingTime: 'Slower (90-180 seconds)'
+      }
+    ]
+  })
 })
 
 // Download endpoints

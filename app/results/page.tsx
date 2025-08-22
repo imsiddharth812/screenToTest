@@ -45,6 +45,12 @@ interface TestCases {
   screenshots?: ScreenshotInfo[];
 }
 
+// Helper function to safely convert any value to string and split
+const safeStringSplit = (value: any, delimiter: string = '\\n'): string[] => {
+  const stringValue = typeof value === 'string' ? value : String(value || '')
+  return stringValue.split(delimiter)
+}
+
 function Results() {
   const [testCases, setTestCases] = useState<TestCases | null>(null);
   const [activeTab, setActiveTab] = useState("all");
@@ -425,7 +431,7 @@ function Results() {
                           <div className="text-xs text-gray-700 leading-relaxed">
                             {testCase.testData ? (
                               <div className="whitespace-pre-line">
-                                {testCase.testData.split('\\n').map((line, i) => (
+                                {safeStringSplit(testCase.testData).map((line, i) => (
                                   <div key={i} className="mb-1">
                                     {line.trim().startsWith('•') ? line : `• ${line}`}
                                   </div>
@@ -439,7 +445,7 @@ function Results() {
                         <td className="px-3 py-4 border-r">
                           <div className="text-xs text-gray-700 leading-relaxed">
                             <div className="whitespace-pre-line">
-                              {(testCase.testSteps || testCase.description || '').split('\\n').map((line, i) => (
+                              {safeStringSplit(testCase.testSteps || testCase.description).map((line, i) => (
                                 <div key={i} className="mb-1">
                                   {line.trim().match(/^\d+\./) || line.trim().startsWith('•') ? line : 
                                    line.trim() ? `• ${line}` : ''}
@@ -452,7 +458,7 @@ function Results() {
                           <div className="text-xs text-gray-700 leading-relaxed">
                             {testCase.expectedResults ? (
                               <div className="whitespace-pre-line">
-                                {testCase.expectedResults.split('\\n').map((line, i) => (
+                                {safeStringSplit(testCase.expectedResults).map((line, i) => (
                                   <div key={i} className="mb-1">
                                     {line.trim().startsWith('•') ? line : `• ${line}`}
                                   </div>

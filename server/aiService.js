@@ -196,7 +196,7 @@ ${pageFlow}
 
 **Enhanced Test Case Structure:**
 Each test case must include:
-- "type": Category (End-to-End, Functional, Integration, Edge Case, Negative, etc.)
+- "type": Category (End-to-End, Integration, Functional, or UI)
 - "title": Business-friendly, descriptive title explaining what is being tested
 - "preconditions": Clear setup requirements and starting state
 - "testSteps": Detailed navigation and action steps with screen context
@@ -217,17 +217,25 @@ Each test case must include:
   ]
 }
 
-**Coverage Areas (Generate comprehensive test cases for ALL areas):**
+**Coverage Areas (Generate comprehensive test cases for these specific types only):**
+
+**PRIMARY TEST TYPES TO GENERATE:**
+1. **End-to-End Tests**: Complete user workflows from start to finish following the exact page sequence
+2. **Integration Tests**: Cross-module functionality and data flow between different parts of the application
+3. **Functional Tests**: Individual feature testing with proper navigation context and business logic validation
+4. **UI Tests**: User interface interaction, form validation, navigation, and visual element behavior
+
+**SPECIFIC COVERAGE AREAS:**
 1. **Complete Flow Testing**: End-to-end tests that follow the exact page sequence from start to finish
 2. **Happy Path Workflows**: Complete successful user journeys following the provided page flow
 3. **Field Validation**: Individual form field testing with navigation context using specific page names
 4. **Error Handling**: Invalid inputs with clear recovery steps at each stage of the page flow
 5. **Business Logic**: Workflow rules and constraints based on the sequential page progression
-6. **User Permissions**: Different user role scenarios at various points in the page flow
-7. **Data Relationships**: How different entities interact across the page workflow stages
-8. **Edge Cases**: Boundary conditions with full context at each step of the page sequence
-9. **Integration Points**: Cross-module functionality following the natural page flow progression
-10. **Flow Interruption**: Test scenarios where users deviate from or interrupt the standard page flow
+6. **Integration Points**: Cross-module functionality following the natural page flow progression
+7. **UI Component Testing**: Button clicks, form submissions, dropdown selections, navigation menus
+8. **Data Flow Testing**: How data moves between pages and components in the workflow
+9. **Form Validation**: Input validation, required fields, format checking across all forms
+10. **Navigation Testing**: Menu navigation, page transitions, breadcrumb functionality
 
 **ADDITIONAL QUALITY REQUIREMENTS:**
 - Include browser/system requirements when relevant
@@ -317,10 +325,13 @@ Example response format:
 
             // Validate that each test case has the required new format
             parsed.testCases.forEach((testCase) => {
-                if (!testCase.preconditions) testCase.preconditions = 'Standard system access required'
-                if (!testCase.testSteps) testCase.testSteps = testCase.description || 'Test steps not specified'
-                if (!testCase.testData) testCase.testData = 'Standard test data'
-                if (!testCase.expectedResults) testCase.expectedResults = 'Test should complete successfully'
+                // Ensure all fields are strings
+                testCase.preconditions = String(testCase.preconditions || 'Standard system access required')
+                testCase.testSteps = String(testCase.testSteps || testCase.description || 'Test steps not specified')
+                testCase.testData = String(testCase.testData || 'Standard test data')
+                testCase.expectedResults = String(testCase.expectedResults || 'Test should complete successfully')
+                testCase.title = String(testCase.title || 'Untitled Test Case')
+                testCase.type = String(testCase.type || 'Functional')
             })
 
             // Convert to the expected format for the frontend
@@ -333,8 +344,7 @@ Example response format:
                 functional: [],
                 endToEnd: [],
                 integration: [],
-                edge: [],
-                negative: []
+                ui: []
             }
 
             parsed.testCases.forEach(testCase => {
