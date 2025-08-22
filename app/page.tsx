@@ -63,6 +63,10 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const [showAnalysisModal, setShowAnalysisModal] = useState(false)
   const [analysisOptions, setAnalysisOptions] = useState<any[]>([])
   const [selectedAnalysisType, setSelectedAnalysisType] = useState<string>('standard')
+  
+  // Test case history state
+  const [scenarioTestCases, setScenarioTestCases] = useState<{[scenarioId: number]: any[]}>({})
+  const [expandedScenarios, setExpandedScenarios] = useState<Set<number>>(new Set())
 
   // Load analysis options on component mount
   useEffect(() => {
@@ -345,6 +349,45 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         setSelectedScenario(scenario)
       }
     }
+  }
+
+  // Load test cases for scenario
+  const loadScenarioTestCases = async (scenario: Scenario) => {
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}/test-cases`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setScenarioTestCases(prev => ({
+          ...prev,
+          [scenario.id]: data.testCases
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching test cases for scenario:', error)
+    }
+  }
+
+  // Toggle scenario expansion and load test cases if needed
+  const toggleScenarioExpansion = async (scenario: Scenario) => {
+    const newExpanded = new Set(expandedScenarios)
+    
+    if (expandedScenarios.has(scenario.id)) {
+      newExpanded.delete(scenario.id)
+    } else {
+      newExpanded.add(scenario.id)
+      // Load test cases if not already loaded
+      if (!scenarioTestCases[scenario.id]) {
+        await loadScenarioTestCases(scenario)
+      }
+    }
+    
+    setExpandedScenarios(newExpanded)
   }
 
   // Delete handlers
@@ -668,6 +711,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       }
       
       formData.append('pageNames', JSON.stringify(pageNames))
+      formData.append('scenarioId', selectedScenario.id.toString())
 
       // Determine API endpoint based on selected analysis type
       const apiEndpoints = {
@@ -702,6 +746,10 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           }))
         }
         localStorage.setItem('testCases', JSON.stringify(testCaseData))
+        
+        // Refresh test case list for the scenario
+        await loadScenarioTestCases(selectedScenario)
+        
         router.push('/results')
       } else {
         const errorData = await response.json().catch(() => ({}))
@@ -920,6 +968,16 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                     </button>
                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                       <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          toggleScenarioExpansion(scenario)
+                                        }}
+                                        className="text-gray-400 hover:text-blue-600 p-1"
+                                        title="View Test Cases"
+                                      >
+                                        {expandedScenarios.has(scenario.id) ? '📁' : '📋'}
+                                      </button>
+                                      <button
                                         onClick={() => openScenarioModal('edit', scenario)}
                                         className="text-gray-400 hover:text-purple-600 p-1"
                                         title="Edit Scenario"
@@ -935,6 +993,76 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                       </button>
                                     </div>
                                   </div>
+                                  
+                                  {/* Test Cases History */}
+                                  {expandedScenarios.has(scenario.id) && (
+                                    <div className="ml-8 mt-2 space-y-1 transition-all duration-200 ease-in-out">
+                                      {scenarioTestCases[scenario.id]?.length > 0 ? (
+                                        scenarioTestCases[scenario.id].map((testCaseSet: any, index: number) => (
+                                          <div 
+                                            key={index} 
+                                            className="bg-gray-50 hover:bg-gray-100 rounded p-2 cursor-pointer transition-colors border border-gray-200"
+                                            onClick={() => {
+                                              // Load test cases into localStorage and navigate to results
+                                              const testCaseData = {
+                                                ...testCaseSet.testCases,
+                                                scenarioId: scenario.id,
+                                                scenarioName: scenario.name
+                                              }
+                                              localStorage.setItem("testCases", JSON.stringify(testCaseData))
+                                              window.location.href = '/results'
+                                            }}
+                                          >
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-lg">
+                                                  {testCaseSet.analysisType === 'standard' && '📊'}
+                                                  {testCaseSet.analysisType === 'vision' && '👁️'}
+                                                  {testCaseSet.analysisType === 'comprehensive' && '🔬'}
+                                                </span>
+                                                <div>
+                                                  <div className="text-sm font-medium text-gray-800">
+                                                    {testCaseSet.analysisType === 'standard' && 'Standard Analysis'}
+                                                    {testCaseSet.analysisType === 'vision' && 'Vision Analysis'}
+                                                    {testCaseSet.analysisType === 'comprehensive' && 'Comprehensive'}
+                                                  </div>
+                                                  <div className="text-xs text-gray-600">
+                                                    {testCaseSet.totalCount} test cases • {new Date(testCaseSet.createdAt).toLocaleDateString()}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              <div className="flex gap-1 text-xs">
+                                                {testCaseSet.functionalCount > 0 && (
+                                                  <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
+                                                    F:{testCaseSet.functionalCount}
+                                                  </span>
+                                                )}
+                                                {testCaseSet.endToEndCount > 0 && (
+                                                  <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded">
+                                                    E2E:{testCaseSet.endToEndCount}
+                                                  </span>
+                                                )}
+                                                {testCaseSet.integrationCount > 0 && (
+                                                  <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
+                                                    I:{testCaseSet.integrationCount}
+                                                  </span>
+                                                )}
+                                                {testCaseSet.uiCount > 0 && (
+                                                  <span className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">
+                                                    UI:{testCaseSet.uiCount}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <div className="text-xs text-gray-500 italic px-2 py-1">
+                                          💭 No test cases generated yet
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -1211,9 +1339,9 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                     </div>
                                   </div>
                                   <div className="text-xs opacity-75 ml-2">
-                                    {index === 0 && "Start"}
-                                    {index === files.length - 1 && index > 0 && "End"}
-                                    {index > 0 && index < files.length - 1 && "→"}
+                                    {index === 0 && "🚀"}
+                                    {index === files.length - 1 && index > 0 && "🎯"}
+                                    {index > 0 && index < files.length - 1 && "⚡"}
                                   </div>
                                 </div>
                               </div>
@@ -1706,6 +1834,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         scenario={scenarioModal.scenario}
         onSuccess={handleScenarioSuccess}
       />
+
 
       <ConfirmModal
         isOpen={deleteModal.isOpen}

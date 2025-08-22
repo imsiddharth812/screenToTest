@@ -3,7 +3,6 @@ const express = require('express')
 const cors = require('cors')
 const multer = require('multer')
 const Tesseract = require('tesseract.js')
-const { Document, Packer, Paragraph, TextRun } = require('docx')
 const ExcelJS = require('exceljs')
 const fs = require('fs')
 const path = require('path')
@@ -114,6 +113,26 @@ const db = new sqlite3.Database('./database.db', (err) => {
             FOREIGN KEY (scenario_id) REFERENCES scenarios (id) ON DELETE CASCADE
           )
         `
+      },
+      // Test Cases table
+      {
+        name: 'test_cases',
+        sql: `
+          CREATE TABLE IF NOT EXISTS test_cases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL,
+            analysis_type VARCHAR(50) NOT NULL DEFAULT 'standard',
+            test_case_data TEXT NOT NULL,
+            total_test_cases INTEGER DEFAULT 0,
+            functional_count INTEGER DEFAULT 0,
+            end_to_end_count INTEGER DEFAULT 0,
+            integration_count INTEGER DEFAULT 0,
+            ui_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (scenario_id) REFERENCES scenarios (id) ON DELETE CASCADE
+          )
+        `
       }
     ]
 
@@ -135,7 +154,9 @@ const db = new sqlite3.Database('./database.db', (err) => {
               'CREATE INDEX IF NOT EXISTS idx_features_project_id ON features(project_id)', 
               'CREATE INDEX IF NOT EXISTS idx_scenarios_feature_id ON scenarios(feature_id)',
               'CREATE INDEX IF NOT EXISTS idx_screenshots_scenario_id ON screenshots(scenario_id)',
-              'CREATE INDEX IF NOT EXISTS idx_screenshots_order ON screenshots(scenario_id, order_index)'
+              'CREATE INDEX IF NOT EXISTS idx_screenshots_order ON screenshots(scenario_id, order_index)',
+              'CREATE INDEX IF NOT EXISTS idx_test_cases_scenario_id ON test_cases(scenario_id)',
+              'CREATE INDEX IF NOT EXISTS idx_test_cases_analysis_type ON test_cases(scenario_id, analysis_type)'
             ]
             
             indexes.forEach(indexSql => {
@@ -1316,6 +1337,84 @@ function smartFilterUIElements(ocrText, pageIndex, pageName) {
   return filteredElements.sort((a, b) => a.priority - b.priority)
 }
 
+// Test Case Persistence Helper Functions
+const saveTestCasesToDB = (scenarioId, analysisType, testCases) => {
+  return new Promise((resolve, reject) => {
+    const testCaseData = JSON.stringify(testCases)
+    const totalCount = testCases.allTestCases ? testCases.allTestCases.length : 0
+    const functionalCount = testCases.functional ? testCases.functional.length : 0
+    const endToEndCount = testCases.endToEnd ? testCases.endToEnd.length : 0  
+    const integrationCount = testCases.integration ? testCases.integration.length : 0
+    const uiCount = testCases.ui ? testCases.ui.length : 0
+
+    // First, delete existing test cases for this scenario and analysis type
+    db.run(
+      'DELETE FROM test_cases WHERE scenario_id = ? AND analysis_type = ?',
+      [scenarioId, analysisType],
+      function(deleteErr) {
+        if (deleteErr) {
+          console.error('Error deleting existing test cases:', deleteErr.message)
+          return reject(deleteErr)
+        }
+
+        // Insert new test cases
+        db.run(
+          `INSERT INTO test_cases 
+           (scenario_id, analysis_type, test_case_data, total_test_cases, functional_count, end_to_end_count, integration_count, ui_count, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [scenarioId, analysisType, testCaseData, totalCount, functionalCount, endToEndCount, integrationCount, uiCount],
+          function(insertErr) {
+            if (insertErr) {
+              console.error('Error saving test cases to DB:', insertErr.message)
+              return reject(insertErr)
+            }
+            
+            console.log(`✓ Test cases saved to DB for scenario ${scenarioId} (${analysisType})`)
+            resolve(this.lastID)
+          }
+        )
+      }
+    )
+  })
+}
+
+const getTestCasesFromDB = (scenarioId, analysisType = null) => {
+  return new Promise((resolve, reject) => {
+    let query = 'SELECT * FROM test_cases WHERE scenario_id = ?'
+    let params = [scenarioId]
+    
+    if (analysisType) {
+      query += ' AND analysis_type = ?'
+      params.push(analysisType)
+    }
+    
+    query += ' ORDER BY updated_at DESC'
+    
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('Error retrieving test cases from DB:', err.message)
+        return reject(err)
+      }
+      
+      const testCases = rows.map(row => ({
+        id: row.id,
+        scenarioId: row.scenario_id,
+        analysisType: row.analysis_type,
+        testCases: JSON.parse(row.test_case_data),
+        totalCount: row.total_test_cases,
+        functionalCount: row.functional_count,
+        endToEndCount: row.end_to_end_count,
+        integrationCount: row.integration_count,
+        uiCount: row.ui_count,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }))
+      
+      resolve(testCases)
+    })
+  })
+}
+
 // Routes
 app.post('/api/generate-testcases', upload.any(), async (req, res) => {
   try {
@@ -1330,9 +1429,11 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
 
     console.log(`Processing ${files.length} images...`)
 
-    // Get page names from request
+    // Get page names and scenario ID from request
     const pageNames = req.body.pageNames ? JSON.parse(req.body.pageNames) : []
+    const scenarioId = req.body.scenarioId ? parseInt(req.body.scenarioId) : null
     console.log('Page names received:', pageNames)
+    console.log('Scenario ID received:', scenarioId)
 
     // Sort files by originalname to maintain consistent order
     files.sort((a, b) => a.originalname.localeCompare(b.originalname))
@@ -1374,6 +1475,18 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     const sessionId = Date.now().toString()
     ocrCache.set(sessionId, { ocrResults, imageCount: files.length, pageNames })
     testCases._sessionId = sessionId
+
+    // Save test cases to database if scenarioId is provided
+    if (scenarioId) {
+      try {
+        await saveTestCasesToDB(scenarioId, 'standard', testCases)
+        testCases.scenarioId = scenarioId
+        console.log(`✓ Test cases persisted to database for scenario ${scenarioId}`)
+      } catch (dbError) {
+        console.error('Error saving test cases to database:', dbError.message)
+        // Don't fail the request if DB save fails, just log it
+      }
+    }
 
     console.log('AI generated test cases successfully!')
     res.json(testCases)
@@ -1451,9 +1564,11 @@ app.post('/api/generate-testcases-vision', upload.any(), async (req, res) => {
   try {
     console.log('Processing Vision AI test case generation request...')
     
-    // Extract screenshot paths and page names
-    const { pageNames } = req.body
+    // Extract screenshot paths, page names, and scenario ID
+    const { pageNames, scenarioId } = req.body
     const pageNamesArray = pageNames ? JSON.parse(pageNames) : []
+    const parsedScenarioId = scenarioId ? parseInt(scenarioId) : null
+    console.log('Scenario ID received:', parsedScenarioId)
     
     // Get screenshot file paths
     const screenshotPaths = []
@@ -1475,6 +1590,18 @@ app.post('/api/generate-testcases-vision', upload.any(), async (req, res) => {
       false // forceRegenerate
     )
 
+    // Save test cases to database if scenarioId is provided
+    if (parsedScenarioId) {
+      try {
+        await saveTestCasesToDB(parsedScenarioId, 'vision', testCases)
+        testCases.scenarioId = parsedScenarioId
+        console.log(`✓ Vision AI test cases persisted to database for scenario ${parsedScenarioId}`)
+      } catch (dbError) {
+        console.error('Error saving Vision AI test cases to database:', dbError.message)
+        // Don't fail the request if DB save fails, just log it
+      }
+    }
+
     console.log('Vision AI generated test cases successfully!')
     res.json(testCases)
   } catch (error) {
@@ -1491,8 +1618,10 @@ app.post('/api/generate-testcases-comprehensive', upload.any(), async (req, res)
   try {
     console.log('Processing Comprehensive (OCR + Vision AI) test case generation request...')
     
-    const { pageNames } = req.body
+    const { pageNames, scenarioId } = req.body
     const pageNamesArray = pageNames ? JSON.parse(pageNames) : []
+    const parsedScenarioId = scenarioId ? parseInt(scenarioId) : null
+    console.log('Scenario ID received:', parsedScenarioId)
     
     // Process OCR first (reuse existing logic)
     const ocrResults = []
@@ -1539,6 +1668,18 @@ app.post('/api/generate-testcases-comprehensive', upload.any(), async (req, res)
       ui: [...(ocrTestCases.ui || []), ...(visionTestCases.ui || [])]
     }
 
+    // Save test cases to database if scenarioId is provided
+    if (parsedScenarioId) {
+      try {
+        await saveTestCasesToDB(parsedScenarioId, 'comprehensive', combinedTestCases)
+        combinedTestCases.scenarioId = parsedScenarioId
+        console.log(`✓ Comprehensive test cases persisted to database for scenario ${parsedScenarioId}`)
+      } catch (dbError) {
+        console.error('Error saving Comprehensive test cases to database:', dbError.message)
+        // Don't fail the request if DB save fails, just log it
+      }
+    }
+
     console.log('Comprehensive analysis completed successfully!')
     res.json(combinedTestCases)
   } catch (error) {
@@ -1583,249 +1724,6 @@ app.get('/api/analysis-options', (req, res) => {
 })
 
 // Download endpoints
-app.post('/api/download/docx', async (req, res) => {
-  try {
-    const testCases = req.body
-
-    const doc = new Document({
-      sections: [{
-        properties: {},
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: "Generated Test Cases",
-                bold: true,
-                size: 32,
-              }),
-            ],
-          }),
-          new Paragraph({ text: "" }),
-
-          // Generate content based on format
-          ...(testCases.allTestCases ?
-            // New format with detailed test cases
-            testCases.allTestCases.flatMap((testCase, index) => [
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: `Test Case TC-${String(index + 1).padStart(3, '0')}`,
-                    bold: true,
-                    size: 16,
-                    color: "366092"
-                  }),
-                ],
-                spacing: { before: 200, after: 100 }
-              }),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: "Type: ",
-                    bold: true,
-                    size: 12,
-                  }),
-                  new TextRun({
-                    text: testCase.type,
-                    size: 12,
-                    color: "0066CC"
-                  }),
-                ],
-                spacing: { after: 50 }
-              }),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: "Title: ",
-                    bold: true,
-                    size: 12,
-                  }),
-                  new TextRun({
-                    text: testCase.title,
-                    size: 12,
-                  }),
-                ],
-                spacing: { after: 50 }
-              }),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: "Test Data:",
-                    bold: true,
-                    size: 12,
-                  }),
-                ],
-                spacing: { after: 30 }
-              }),
-              // Test Data section with bullets
-              ...(testCase.testData || 'Standard test data').replace(/\\n/g, '\n').split('\n').filter(line => line.trim()).map(line => 
-                new Paragraph({
-                  text: line.trim().startsWith('•') ? line : `• ${line}`,
-                  spacing: { after: 30 }
-                })
-              ),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: "Test Steps:",
-                    bold: true,
-                    size: 12,
-                  }),
-                ],
-                spacing: { before: 50, after: 30 }
-              }),
-              // Test Steps section with bullets/numbers
-              ...(testCase.testSteps || testCase.description || '').replace(/\\n/g, '\n').split('\n').filter(line => line.trim()).map(line => 
-                new Paragraph({
-                  text: line.trim().match(/^\d+\./) || line.trim().startsWith('•') ? line : `• ${line}`,
-                  spacing: { after: 30 }
-                })
-              ),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: "Expected Results:",
-                    bold: true,
-                    size: 12,
-                  }),
-                ],
-                spacing: { before: 50, after: 30 }
-              }),
-              // Expected Results section with bullets
-              ...(testCase.expectedResults || 'Test should complete successfully').replace(/\\n/g, '\n').split('\n').filter(line => line.trim()).map(line => 
-                new Paragraph({
-                  text: line.trim().startsWith('•') ? line : `• ${line}`,
-                  spacing: { after: 30 }
-                })
-              ),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: "─".repeat(80),
-                    color: "CCCCCC"
-                  }),
-                ],
-                spacing: { after: 200 }
-              }),
-            ])
-            :
-            // Legacy format
-            [
-              // Target/Functional Test Cases
-              ...(testCases.target || testCases.functional || []).length > 0 ? [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: "Functional Test Cases",
-                      bold: true,
-                      size: 24,
-                    }),
-                  ],
-                }),
-                ...(testCases.target || testCases.functional || []).map(testCase =>
-                  new Paragraph({ text: `• ${testCase}` })
-                ),
-                new Paragraph({ text: "" }),
-              ] : [],
-
-              // Integration Test Cases
-              ...(testCases.integration || []).length > 0 ? [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: "Integration Test Cases",
-                      bold: true,
-                      size: 24,
-                    }),
-                  ],
-                }),
-                ...testCases.integration.map(testCase =>
-                  new Paragraph({ text: `• ${testCase}` })
-                ),
-                new Paragraph({ text: "" }),
-              ] : [],
-
-              // System/End-to-End Test Cases
-              ...(testCases.system || testCases.endToEnd || []).length > 0 ? [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: "End-to-End Test Cases",
-                      bold: true,
-                      size: 24,
-                    }),
-                  ],
-                }),
-                ...(testCases.system || testCases.endToEnd || []).map(testCase =>
-                  new Paragraph({ text: `• ${testCase}` })
-                ),
-                new Paragraph({ text: "" }),
-              ] : [],
-
-              // Edge Cases
-              ...(testCases.edge || []).length > 0 ? [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: "Edge Cases",
-                      bold: true,
-                      size: 24,
-                    }),
-                  ],
-                }),
-                ...testCases.edge.map(testCase =>
-                  new Paragraph({ text: `• ${testCase}` })
-                ),
-                new Paragraph({ text: "" }),
-              ] : [],
-
-              // Negative Test Cases
-              ...(testCases.negative || []).length > 0 ? [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: "Negative Test Cases",
-                      bold: true,
-                      size: 24,
-                    }),
-                  ],
-                }),
-                ...testCases.negative.map(testCase =>
-                  new Paragraph({ text: `• ${testCase}` })
-                ),
-                new Paragraph({ text: "" }),
-              ] : [],
-
-              // Positive Test Cases (legacy)
-              ...(testCases.positive || []).length > 0 ? [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: "Positive Test Cases",
-                      bold: true,
-                      size: 24,
-                    }),
-                  ],
-                }),
-                ...testCases.positive.map(testCase =>
-                  new Paragraph({ text: `• ${testCase}` })
-                ),
-              ] : [],
-            ].flat()
-          )
-        ],
-      }],
-    })
-
-    const buffer = await Packer.toBuffer(doc)
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-    res.setHeader('Content-Disposition', 'attachment; filename=test-cases.docx')
-    res.send(buffer)
-  } catch (error) {
-    console.error('Error generating DOCX:', error)
-    res.status(500).json({ error: 'Failed to generate DOCX' })
-  }
-})
 
 app.post('/api/download/xlsx', async (req, res) => {
   try {
@@ -1964,6 +1862,88 @@ app.post('/api/download/xlsx', async (req, res) => {
   } catch (error) {
     console.error('Error generating XLSX:', error)
     res.status(500).json({ error: 'Failed to generate XLSX' })
+  }
+})
+
+// Get saved test cases for a scenario
+app.get('/api/scenarios/:scenarioId/test-cases', authenticateToken, async (req, res) => {
+  try {
+    const { scenarioId } = req.params
+    const { analysisType } = req.query // Optional filter by analysis type
+    
+    // Verify scenario belongs to user
+    const scenario = await new Promise((resolve, reject) => {
+      db.get(`
+        SELECT s.*, f.project_id 
+        FROM scenarios s
+        JOIN features f ON s.feature_id = f.id
+        JOIN projects p ON f.project_id = p.id
+        WHERE s.id = ? AND p.user_id = ?
+      `, [scenarioId, req.user.userId], (err, row) => {
+        if (err) reject(err)
+        else resolve(row)
+      })
+    })
+    
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found or access denied' })
+    }
+    
+    const testCases = await getTestCasesFromDB(parseInt(scenarioId), analysisType)
+    res.json({ testCases, scenario })
+  } catch (error) {
+    console.error('Error retrieving test cases:', error)
+    res.status(500).json({ error: 'Failed to retrieve test cases' })
+  }
+})
+
+// Get a specific test case by ID
+app.get('/api/test-cases/:testCaseId', authenticateToken, async (req, res) => {
+  try {
+    const { testCaseId } = req.params
+    
+    const testCase = await new Promise((resolve, reject) => {
+      db.get(`
+        SELECT tc.*, s.name as scenario_name, f.name as feature_name, p.name as project_name
+        FROM test_cases tc
+        JOIN scenarios s ON tc.scenario_id = s.id
+        JOIN features f ON s.feature_id = f.id
+        JOIN projects p ON f.project_id = p.id
+        WHERE tc.id = ? AND p.user_id = ?
+      `, [testCaseId, req.user.userId], (err, row) => {
+        if (err) reject(err)
+        else resolve(row)
+      })
+    })
+    
+    if (!testCase) {
+      return res.status(404).json({ error: 'Test case not found or access denied' })
+    }
+    
+    // Parse the test case data
+    const formattedTestCase = {
+      id: testCase.id,
+      scenarioId: testCase.scenario_id,
+      analysisType: testCase.analysis_type,
+      testCases: JSON.parse(testCase.test_case_data),
+      totalCount: testCase.total_test_cases,
+      functionalCount: testCase.functional_count,
+      endToEndCount: testCase.end_to_end_count,
+      integrationCount: testCase.integration_count,
+      uiCount: testCase.ui_count,
+      createdAt: testCase.created_at,
+      updatedAt: testCase.updated_at,
+      scenario: {
+        name: testCase.scenario_name,
+        feature: testCase.feature_name,
+        project: testCase.project_name
+      }
+    }
+    
+    res.json(formattedTestCase)
+  } catch (error) {
+    console.error('Error retrieving test case:', error)
+    res.status(500).json({ error: 'Failed to retrieve test case' })
   }
 })
 

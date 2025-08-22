@@ -129,29 +129,6 @@ function Results() {
     }
   };
 
-  const downloadDocx = async () => {
-    try {
-      const response = await fetch("http://localhost:3001/api/download/docx", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(testCases),
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "test-cases.docx";
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
-    } catch (error) {
-      console.error("Download failed:", error);
-    }
-  };
 
   const downloadXlsx = async () => {
     try {
@@ -282,6 +259,12 @@ function Results() {
             Generated Test Cases
           </h1>
           <div className="space-x-4">
+            <Link
+              href="/"
+              className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded inline-flex items-center gap-2"
+            >
+              ← Back to Projects
+            </Link>
             {testCases._sessionId && (
               <button
                 onClick={regenerateTestCases}
@@ -291,12 +274,6 @@ function Results() {
                 {isRegenerating ? "Regenerating..." : "🔄 Regenerate Test Cases"}
               </button>
             )}
-            <button
-              onClick={downloadDocx}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded"
-            >
-              Download DOCX
-            </button>
             <button
               onClick={downloadXlsx}
               className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded"
@@ -498,10 +475,10 @@ function Results() {
 
         <div className="mt-8 text-center">
           <Link
-            href="/upload"
-            className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded"
+            href="/"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded inline-flex items-center gap-2"
           >
-            Upload New Screenshots
+            ← Back to Projects
           </Link>
         </div>
       </div>
