@@ -714,7 +714,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       formData.append('scenarioId', selectedScenario.id.toString())
 
       // Determine API endpoint based on selected analysis type
-      const apiEndpoints = {
+      const apiEndpoints: Record<string, string> = {
         'standard': '/api/generate-testcases',
         'vision': '/api/generate-testcases-vision',
         'comprehensive': '/api/generate-testcases-comprehensive'
@@ -996,12 +996,12 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                   
                                   {/* Test Cases History */}
                                   {expandedScenarios.has(scenario.id) && (
-                                    <div className="ml-8 mt-2 space-y-1 transition-all duration-200 ease-in-out">
+                                    <div className="ml-6 mt-3 space-y-2 transition-all duration-200 ease-in-out">
                                       {scenarioTestCases[scenario.id]?.length > 0 ? (
                                         scenarioTestCases[scenario.id].map((testCaseSet: any, index: number) => (
                                           <div 
                                             key={index} 
-                                            className="bg-gray-50 hover:bg-gray-100 rounded p-2 cursor-pointer transition-colors border border-gray-200"
+                                            className="test-analysis-card bg-white border border-gray-200 rounded-lg overflow-hidden hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer"
                                             onClick={() => {
                                               // Load test cases into localStorage and navigate to results
                                               const testCaseData = {
@@ -1013,51 +1013,90 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                               window.location.href = '/results'
                                             }}
                                           >
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-lg">
-                                                  {testCaseSet.analysisType === 'standard' && '📊'}
-                                                  {testCaseSet.analysisType === 'vision' && '👁️'}
-                                                  {testCaseSet.analysisType === 'comprehensive' && '🔬'}
-                                                </span>
-                                                <div>
-                                                  <div className="text-sm font-medium text-gray-800">
-                                                    {testCaseSet.analysisType === 'standard' && 'Standard Analysis'}
-                                                    {testCaseSet.analysisType === 'vision' && 'Vision Analysis'}
-                                                    {testCaseSet.analysisType === 'comprehensive' && 'Comprehensive'}
+                                            {/* Gradient Header */}
+                                            <div className={`h-0.5 ${
+                                              testCaseSet.analysisType === 'vision' 
+                                                ? 'bg-gradient-to-r from-blue-500 to-indigo-600' 
+                                                : testCaseSet.analysisType === 'comprehensive'
+                                                ? 'bg-gradient-to-r from-purple-500 to-pink-600'
+                                                : 'bg-gradient-to-r from-cyan-500 to-blue-600'
+                                            }`}></div>
+                                            
+                                            <div className="p-3">
+                                              {/* Card Top Section */}
+                                              <div className="flex justify-between items-start mb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                  {/* Icon */}
+                                                  <div className={`w-5 h-5 rounded flex items-center justify-center text-xs text-white ${
+                                                    testCaseSet.analysisType === 'vision' 
+                                                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600' 
+                                                      : testCaseSet.analysisType === 'comprehensive'
+                                                      ? 'bg-gradient-to-br from-purple-500 to-pink-600'
+                                                      : 'bg-gradient-to-br from-cyan-500 to-blue-600'
+                                                  }`}>
+                                                    {testCaseSet.analysisType === 'standard' && '📊'}
+                                                    {testCaseSet.analysisType === 'vision' && '👁'}
+                                                    {testCaseSet.analysisType === 'comprehensive' && '🔬'}
                                                   </div>
-                                                  <div className="text-xs text-gray-600">
-                                                    {testCaseSet.totalCount} test cases • {new Date(testCaseSet.createdAt).toLocaleDateString()}
+                                                  
+                                                  {/* Info */}
+                                                  <div>
+                                                    <h4 className="text-sm font-semibold text-gray-900 leading-tight">
+                                                      {testCaseSet.analysisType === 'standard' && 'Standard Analysis'}
+                                                      {testCaseSet.analysisType === 'vision' && 'Vision Analysis'}
+                                                      {testCaseSet.analysisType === 'comprehensive' && 'Comprehensive'}
+                                                    </h4>
+                                                    <p className="text-xs text-gray-600">
+                                                      {testCaseSet.totalCount} test cases
+                                                    </p>
                                                   </div>
                                                 </div>
+                                                
+                                                {/* Date */}
+                                                <div className="bg-gray-100 text-gray-600 text-xs px-1.5 py-0.5 rounded text-center leading-tight">
+                                                  {new Date(testCaseSet.createdAt).toLocaleDateString('en-GB').slice(0, 5)}
+                                                </div>
                                               </div>
-                                              <div className="flex gap-1 text-xs">
-                                                {testCaseSet.functionalCount > 0 && (
-                                                  <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">
-                                                    F:{testCaseSet.functionalCount}
+                                              
+                                              {/* Test Types Grid */}
+                                              <div className="grid grid-cols-2 gap-1.5">
+                                                {/* Functional */}
+                                                <div className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border hover:bg-gray-100 transition-colors">
+                                                  <span className="text-xs font-medium text-gray-700">Functional</span>
+                                                  <span className="text-xs font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                                                    {testCaseSet.functionalCount || 0}
                                                   </span>
-                                                )}
-                                                {testCaseSet.endToEndCount > 0 && (
-                                                  <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded">
-                                                    E2E:{testCaseSet.endToEndCount}
+                                                </div>
+                                                
+                                                {/* Integration */}
+                                                <div className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border hover:bg-gray-100 transition-colors">
+                                                  <span className="text-xs font-medium text-gray-700">Integration</span>
+                                                  <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                                                    {testCaseSet.integrationCount || 0}
                                                   </span>
-                                                )}
-                                                {testCaseSet.integrationCount > 0 && (
-                                                  <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
-                                                    I:{testCaseSet.integrationCount}
+                                                </div>
+                                                
+                                                {/* End-to-End */}
+                                                <div className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border hover:bg-gray-100 transition-colors">
+                                                  <span className="text-xs font-medium text-gray-700">E2E</span>
+                                                  <span className="text-xs font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                                                    {testCaseSet.endToEndCount || 0}
                                                   </span>
-                                                )}
-                                                {testCaseSet.uiCount > 0 && (
-                                                  <span className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">
-                                                    UI:{testCaseSet.uiCount}
+                                                </div>
+                                                
+                                                {/* UI Tests */}
+                                                <div className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border hover:bg-gray-100 transition-colors">
+                                                  <span className="text-xs font-medium text-gray-700">UI</span>
+                                                  <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded min-w-[20px] text-center">
+                                                    {testCaseSet.uiCount || 0}
                                                   </span>
-                                                )}
+                                                </div>
                                               </div>
                                             </div>
                                           </div>
                                         ))
                                       ) : (
-                                        <div className="text-xs text-gray-500 italic px-2 py-1">
+                                        <div className="text-xs text-gray-500 italic px-3 py-2 bg-gray-50 rounded border border-gray-200">
                                           💭 No test cases generated yet
                                         </div>
                                       )}
@@ -1757,7 +1796,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                         <div className="mb-3">
                           <h4 className="font-medium text-gray-900 text-sm mb-1">Features:</h4>
                           <ul className="text-sm text-gray-600 space-y-1">
-                            {option.features.map((feature, index) => (
+                            {option.features.map((feature: string, index: number) => (
                               <li key={index} className="flex items-center gap-2">
                                 <span className="text-green-500">✓</span>
                                 {feature}
