@@ -33,6 +33,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const [projects, setProjects] = useState<Project[]>([])
   const [features, setFeatures] = useState<Feature[]>([])
   const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [featuresPerProject, setFeaturesPerProject] = useState<{[projectId: number]: Feature[]}>({}) 
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null)
@@ -87,6 +88,69 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   // Load data on component mount
   useEffect(() => {
     loadProjects()
+  }, [])
+
+  // Helper function to check if text is truncated and setup conditional tooltip
+  const handleTooltipCheck = useCallback((element: HTMLElement, text: string) => {
+    // Use setTimeout to ensure element is fully rendered
+    setTimeout(() => {
+      // Simple approach: temporarily remove truncate class to measure natural width
+      const originalClasses = element.className
+      const originalOverflow = element.style.overflow
+      const originalTextOverflow = element.style.textOverflow
+      const originalWhiteSpace = element.style.whiteSpace
+      
+      // Remove truncation temporarily
+      element.className = originalClasses.replace('truncate', '')
+      element.style.overflow = 'visible'
+      element.style.textOverflow = 'clip'
+      element.style.whiteSpace = 'nowrap'
+      
+      // Force reflow and measure natural width
+      element.offsetHeight // Force reflow
+      const naturalWidth = element.scrollWidth
+      
+      // Restore original styles
+      element.className = originalClasses
+      element.style.overflow = originalOverflow
+      element.style.textOverflow = originalTextOverflow
+      element.style.whiteSpace = originalWhiteSpace
+      element.offsetHeight // Force reflow again
+      
+      // Get the actual rendered width when truncated
+      const actualTextWidth = element.getBoundingClientRect().width
+      
+      // If naturalWidth > actualTextWidth, then text is truncated
+      const isOverflowing = naturalWidth > (actualTextWidth + 5) // Larger tolerance
+      
+      // Only show tooltip if text is actually truncated
+      const shouldShowTooltip = isOverflowing
+      
+      // Clean up any existing event listeners
+      element.removeAttribute('data-tooltip-setup')
+      
+      if (shouldShowTooltip) {
+        element.setAttribute('data-show-tooltip', 'true')
+        element.setAttribute('data-tooltip-text', text)
+        
+        // Only add event listener if not already added
+        if (!element.hasAttribute('data-tooltip-setup')) {
+          const handleMouseEnter = (e: MouseEvent) => {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            const target = e.currentTarget as HTMLElement
+            target.style.setProperty('--tooltip-x', `${rect.left + rect.width / 2}px`)
+            target.style.setProperty('--tooltip-y', `${rect.bottom + 8}px`)
+            target.style.setProperty('--tooltip-y-arrow', `${rect.bottom + 4}px`)
+          }
+          
+          element.addEventListener('mouseenter', handleMouseEnter)
+          element.setAttribute('data-tooltip-setup', 'true')
+        }
+      } else {
+        element.setAttribute('data-show-tooltip', 'false')
+        element.removeAttribute('data-tooltip-text')
+      }
+    }, 200) // Increased timeout to ensure rendering is complete
   }, [])
 
   // Handle keyboard events for maximized image and help panel
@@ -156,6 +220,11 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const loadFeatures = async (projectId: number) => {
     try {
       const result = await featuresApi.getByProject(projectId)
+      setFeaturesPerProject(prev => ({
+        ...prev,
+        [projectId]: result.features
+      }))
+      // Also keep the main features state for backward compatibility
       setFeatures(result.features)
     } catch (error) {
       setError('Failed to load features')
@@ -179,6 +248,11 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     if (newExpanded.has(projectId)) {
       newExpanded.delete(projectId)
       // Clear features for this project when collapsed
+      setFeaturesPerProject(prev => {
+        const updated = { ...prev }
+        delete updated[projectId]
+        return updated
+      })
       if (selectedProject?.id === projectId) {
         setSelectedProject(null)
         setSelectedFeature(null)
@@ -785,6 +859,82 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <style jsx>{`
+        .conditional-tooltip {
+          position: relative;
+        }
+        .conditional-tooltip[data-show-tooltip="true"]::after {
+          content: attr(data-tooltip-text);
+          position: fixed;
+          left: var(--tooltip-x, 50%);
+          top: var(--tooltip-y, 50%);
+          transform: translateX(-50%);
+          background: #1f2937;
+          color: white;
+          font-size: 14px;
+          font-weight: 500;
+          padding: 8px 12px;
+          border-radius: 8px;
+          white-space: pre-wrap;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.1s ease;
+          z-index: 1000;
+          max-width: 600px;
+          word-wrap: break-word;
+          hyphens: auto;
+        }
+        .conditional-tooltip[data-show-tooltip="true"]:hover::after {
+          opacity: 1;
+        }
+        .conditional-tooltip[data-show-tooltip="true"]::before {
+          content: '';
+          position: fixed;
+          left: var(--tooltip-x, 50%);
+          top: var(--tooltip-y-arrow, 50%);
+          transform: translateX(-50%);
+          width: 0;
+          height: 0;
+          border-left: 4px solid transparent;
+          border-right: 4px solid transparent;
+          border-bottom: 4px solid #1f2937;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.1s ease;
+          z-index: 1000;
+        }
+        .conditional-tooltip[data-show-tooltip="true"]:hover::before {
+          opacity: 1;
+        }
+        .hover-tooltip {
+          position: relative;
+        }
+        .hover-tooltip::after {
+          content: attr(data-tooltip);
+          position: fixed;
+          left: var(--tooltip-x, 50%);
+          top: var(--tooltip-y, 50%);
+          transform: translateX(-50%);
+          background: white;
+          color: #374151;
+          font-size: 12px;
+          font-weight: 500;
+          padding: 8px 10px;
+          border-radius: 6px;
+          white-space: nowrap;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.1s ease;
+          z-index: 1000;
+          max-width: 200px;
+          word-break: break-word;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+          border: 1px solid #e5e7eb;
+        }
+        .hover-tooltip:hover::after {
+          opacity: 1;
+        }
+      `}</style>
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -812,24 +962,24 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       <div className="flex h-[calc(100vh-80px)] overflow-hidden">
         {/* Sidebar */}
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Projects</h2>
+          <div className="p-4 flex-1 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h2 className="text-lg font-semibold text-gray-900 min-w-0 truncate">Projects</h2>
               <button
                 onClick={() => openProjectModal('create')}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-1"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-1 flex-shrink-0"
               >
                 <span>+</span> Create Project
               </button>
             </div>
             
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-lg mb-4 text-sm">
+              <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-lg mb-4 text-sm flex-shrink-0">
                 {error}
               </div>
             )}
             
-            <div className="space-y-1 flex-1 overflow-y-auto">
+            <div className="space-y-1 flex-1 overflow-y-auto overflow-x-hidden">
               {projects.map((project) => (
                 <div key={project.id} className="select-none">
                   {/* Project Node */}
@@ -841,14 +991,19 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                           handleProjectSelect(project)
                         }
                       }}
-                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 flex-1 text-left"
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 flex-1 text-left min-w-0"
                     >
                       <span className="text-gray-500 text-sm">
                         {expandedProjects.has(project.id) ? '▼' : '▶'}
                       </span>
                       <span className="text-blue-600">📁</span>
-                      <div className="flex-1">
-                        <div className={`font-medium text-sm ${selectedProject?.id === project.id ? 'text-blue-600' : 'text-gray-900'}`}>
+                      <div className="flex-1 min-w-0">
+                        <div 
+                          className={`font-medium text-sm truncate conditional-tooltip ${selectedProject?.id === project.id ? 'text-blue-600' : 'text-gray-900'}`}
+                          ref={(el) => {
+                            if (el) handleTooltipCheck(el, project.name)
+                          }}
+                        >
                           {project.name}
                         </div>
                         <div className="text-xs text-gray-500">
@@ -856,17 +1011,17 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                         </div>
                       </div>
                     </button>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto pr-2">
                       <button
                         onClick={() => openProjectModal('edit', project)}
-                        className="text-gray-400 hover:text-blue-600 p-1"
+                        className="text-gray-400 hover:text-blue-600 p-1 flex-shrink-0"
                         title="Edit Project"
                       >
                         ✏️
                       </button>
                       <button
                         onClick={() => openDeleteModal('project', project)}
-                        className="text-gray-400 hover:text-red-600 p-1"
+                        className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0"
                         title="Delete Project"
                       >
                         🗑️
@@ -888,7 +1043,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       </div>
                       
                       {/* Feature Nodes */}
-                      {features.map((feature) => (
+                      {(featuresPerProject[project.id] || []).map((feature) => (
                         <div key={feature.id} className="group">
                           <div className="flex items-center">
                             <button
@@ -898,14 +1053,19 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                   handleFeatureSelect(feature)
                                 }
                               }}
-                              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-green-50 flex-1 text-left"
+                              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-green-50 flex-1 text-left min-w-0"
                             >
                               <span className="text-gray-500 text-sm">
                                 {expandedFeatures.has(feature.id) ? '▼' : '▶'}
                               </span>
                               <span className="text-green-600">📂</span>
-                              <div className="flex-1">
-                                <div className={`font-medium text-sm ${selectedFeature?.id === feature.id ? 'text-green-600' : 'text-gray-800'}`}>
+                              <div className="flex-1 min-w-0">
+                                <div 
+                                  className={`font-medium text-sm truncate conditional-tooltip ${selectedFeature?.id === feature.id ? 'text-green-600' : 'text-gray-800'}`}
+                                  ref={(el) => {
+                                    if (el) handleTooltipCheck(el, feature.name)
+                                  }}
+                                >
                                   {feature.name}
                                 </div>
                                 <div className="text-xs text-gray-500">
@@ -913,17 +1073,17 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                 </div>
                               </div>
                             </button>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto pr-2">
                               <button
                                 onClick={() => openFeatureModal('edit', feature)}
-                                className="text-gray-400 hover:text-green-600 p-1"
+                                className="text-gray-400 hover:text-green-600 p-1 flex-shrink-0"
                                 title="Edit Feature"
                               >
                                 ✏️
                               </button>
                               <button
                                 onClick={() => openDeleteModal('feature', feature)}
-                                className="text-gray-400 hover:text-red-600 p-1"
+                                className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0"
                                 title="Delete Feature"
                               >
                                 🗑️
@@ -950,43 +1110,43 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                   <div className="flex items-center">
                                     <button
                                       onClick={() => handleScenarioSelect(scenario)}
-                                      className={`flex items-center gap-2 px-2 py-1 rounded hover:bg-purple-50 flex-1 text-left ${
+                                      className={`flex items-center gap-2 px-2 py-1 rounded hover:bg-purple-50 flex-1 text-left min-w-0 ${
                                         selectedScenario?.id === scenario.id ? 'bg-purple-100 border border-purple-200' : ''
                                       }`}
                                     >
                                       <span className="text-gray-400 text-sm ml-4">📄</span>
-                                      <div className="flex-1">
-                                        <div className={`font-medium text-sm ${selectedScenario?.id === scenario.id ? 'text-purple-600' : 'text-gray-800'}`}>
+                                      <div className="flex-1 min-w-0">
+                                        <div 
+                                          className={`font-medium text-xs truncate conditional-tooltip ${selectedScenario?.id === scenario.id ? 'text-purple-600' : 'text-gray-800'}`}
+                                          ref={(el) => {
+                                            if (el) handleTooltipCheck(el, scenario.name)
+                                          }}
+                                        >
                                           {scenario.name}
                                         </div>
-                                        {scenario.description && (
-                                          <div className="text-xs text-gray-500 truncate">
-                                            {scenario.description}
-                                          </div>
-                                        )}
                                       </div>
                                     </button>
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto pr-2">
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           toggleScenarioExpansion(scenario)
                                         }}
-                                        className="text-gray-400 hover:text-blue-600 p-1"
+                                        className="text-gray-400 hover:text-blue-600 p-1 flex-shrink-0"
                                         title="View Test Cases"
                                       >
                                         {expandedScenarios.has(scenario.id) ? '📁' : '📋'}
                                       </button>
                                       <button
                                         onClick={() => openScenarioModal('edit', scenario)}
-                                        className="text-gray-400 hover:text-purple-600 p-1"
+                                        className="text-gray-400 hover:text-purple-600 p-1 flex-shrink-0"
                                         title="Edit Scenario"
                                       >
                                         ✏️
                                       </button>
                                       <button
                                         onClick={() => openDeleteModal('scenario', scenario)}
-                                        className="text-gray-400 hover:text-red-600 p-1"
+                                        className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0"
                                         title="Delete Scenario"
                                       >
                                         🗑️
