@@ -34,6 +34,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const [features, setFeatures] = useState<Feature[]>([])
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [featuresPerProject, setFeaturesPerProject] = useState<{[projectId: number]: Feature[]}>({}) 
+  const [scenariosPerFeature, setScenariosPerFeature] = useState<{[featureId: number]: Scenario[]}>({}) 
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null)
@@ -235,6 +236,11 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const loadScenarios = async (featureId: number) => {
     try {
       const result = await scenariosApi.getByFeature(featureId)
+      setScenariosPerFeature(prev => ({
+        ...prev,
+        [featureId]: result.scenarios
+      }))
+      // Also keep the main scenarios state for backward compatibility
       setScenarios(result.scenarios)
     } catch (error) {
       setError('Failed to load scenarios')
@@ -266,11 +272,16 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     setExpandedProjects(newExpanded)
   }
 
-  const toggleFeatureExpansion = (featureId: number) => {
+  const toggleFeatureExpansion = async (featureId: number) => {
     const newExpanded = new Set(expandedFeatures)
     if (newExpanded.has(featureId)) {
       newExpanded.delete(featureId)
       // Clear scenarios for this feature when collapsed
+      setScenariosPerFeature(prev => {
+        const updated = { ...prev }
+        delete updated[featureId]
+        return updated
+      })
       if (selectedFeature?.id === featureId) {
         setSelectedFeature(null)
         setSelectedScenario(null)
@@ -278,6 +289,8 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       }
     } else {
       newExpanded.add(featureId)
+      // Load scenarios when feature is expanded
+      await loadScenarios(featureId)
     }
     setExpandedFeatures(newExpanded)
   }
@@ -1047,8 +1060,8 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                         <div key={feature.id} className="group">
                           <div className="flex items-center">
                             <button
-                              onClick={() => {
-                                toggleFeatureExpansion(feature.id)
+                              onClick={async () => {
+                                await toggleFeatureExpansion(feature.id)
                                 if (!expandedFeatures.has(feature.id)) {
                                   handleFeatureSelect(feature)
                                 }
@@ -1105,7 +1118,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                               </div>
                               
                               {/* Scenario Nodes */}
-                              {scenarios.map((scenario) => (
+                              {(scenariosPerFeature[feature.id] || []).map((scenario) => (
                                 <div key={scenario.id} className="group">
                                   <div className="flex items-center">
                                     <button
