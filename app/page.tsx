@@ -947,6 +947,25 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         .hover-tooltip:hover::after {
           opacity: 1;
         }
+        .project-group:hover .project-actions {
+          opacity: 1;
+        }
+        .feature-group:hover > div > .feature-actions {
+          opacity: 1;
+        }
+        .scenario-group:hover > div > .scenario-actions {
+          opacity: 1;
+        }
+        /* More specific hover isolation */
+        .feature-group:not(.child-hovered) .feature-actions {
+          transition: opacity 0.2s ease;
+        }
+        .feature-group:hover:not(.child-hovered) .feature-actions {
+          opacity: 1;
+        }
+        .feature-group.child-hovered .feature-actions {
+          opacity: 0 !important;
+        }
       `}</style>
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
@@ -996,7 +1015,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
               {projects.map((project) => (
                 <div key={project.id} className="select-none">
                   {/* Project Node */}
-                  <div className="flex items-center group">
+                  <div className="flex items-center project-group">
                     <button
                       onClick={() => {
                         toggleProjectExpansion(project.id)
@@ -1024,7 +1043,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                         </div>
                       </div>
                     </button>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto pr-2">
+                    <div className="project-actions flex items-center gap-1 opacity-0 transition-opacity flex-shrink-0 ml-auto pr-2">
                       <button
                         onClick={() => openProjectModal('edit', project)}
                         className="text-gray-400 hover:text-blue-600 p-1 flex-shrink-0"
@@ -1057,7 +1076,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       
                       {/* Feature Nodes */}
                       {(featuresPerProject[project.id] || []).map((feature) => (
-                        <div key={feature.id} className="group">
+                        <div key={feature.id} className="feature-group">
                           <div className="flex items-center">
                             <button
                               onClick={async () => {
@@ -1086,7 +1105,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                 </div>
                               </div>
                             </button>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto pr-2">
+                            <div className="feature-actions flex items-center gap-1 opacity-0 transition-opacity flex-shrink-0 ml-auto pr-2">
                               <button
                                 onClick={() => openFeatureModal('edit', feature)}
                                 className="text-gray-400 hover:text-green-600 p-1 flex-shrink-0"
@@ -1119,7 +1138,16 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                               
                               {/* Scenario Nodes */}
                               {(scenariosPerFeature[feature.id] || []).map((scenario) => (
-                                <div key={scenario.id} className="group">
+                                <div 
+                                  key={scenario.id} 
+                                  className="scenario-group"
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.closest('.feature-group')?.classList.add('child-hovered')
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.closest('.feature-group')?.classList.remove('child-hovered')
+                                  }}
+                                >
                                   <div className="flex items-center">
                                     <button
                                       onClick={() => handleScenarioSelect(scenario)}
@@ -1139,7 +1167,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                         </div>
                                       </div>
                                     </button>
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto pr-2">
+                                    <div className="scenario-actions flex items-center gap-1 opacity-0 transition-opacity flex-shrink-0 ml-auto pr-2">
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation()
