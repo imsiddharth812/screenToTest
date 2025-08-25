@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useAuth } from './components/AuthContext'
 import AuthModal from './components/AuthModal'
 import ProjectModal from './components/ProjectModal'
@@ -29,7 +28,6 @@ interface UploadedFile {
 }
 
 function DashboardView({ user, logout }: { user: any, logout: () => void }) {
-  const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [features, setFeatures] = useState<Feature[]>([])
   const [scenarios, setScenarios] = useState<Scenario[]>([])
@@ -837,7 +835,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         // Refresh test case list for the scenario
         await loadScenarioTestCases(selectedScenario)
         
-        router.push('/results')
+        window.open('/results', '_blank')
       } else {
         const errorData = await response.json().catch(() => ({}))
         
@@ -1211,7 +1209,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                                 scenarioName: scenario.name
                                               }
                                               localStorage.setItem("testCases", JSON.stringify(testCaseData))
-                                              window.location.href = '/results'
+                                              window.open('/results', '_blank')
                                             }}
                                           >
                                             {/* Gradient Header */}
