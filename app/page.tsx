@@ -8,6 +8,7 @@ import ProjectModal from './components/ProjectModal'
 import FeatureModal from './components/FeatureModal'
 import ScenarioModal from './components/ScenarioModal'
 import ConfirmModal from './components/ConfirmModal'
+import SecureImage from './components/SecureImage'
 import {
   projectsApi,
   featuresApi,
@@ -322,7 +323,8 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         console.log('Loaded screenshots from database:', data.screenshots)
         // Convert database screenshots to UploadedFile format for display
         const existingFiles: UploadedFile[] = data.screenshots.map((screenshot: any) => {
-          const previewUrl = screenshot.file_path.startsWith('http') ? screenshot.file_path : `http://localhost:3001/${screenshot.file_path}`
+          // Use secure API endpoint instead of direct file access
+          const previewUrl = `http://localhost:3001/api/screenshots/${screenshot.id}`
           console.log(`Screenshot ${screenshot.id}: ${screenshot.original_name} -> ${previewUrl}`)
           return {
             id: screenshot.id.toString(),
@@ -595,11 +597,12 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
             const fileIndex = updatedFiles.findIndex(f => f.id === uploadedFile.id)
             if (fileIndex !== -1) {
               console.log(`Updating file state: ${uploadedFile.originalName} -> ID ${createdScreenshot.screenshot.id}`)
+              // Use secure API endpoint for newly uploaded screenshots
               updatedFiles[fileIndex] = {
                 ...updatedFiles[fileIndex],
                 isExisting: true,
                 screenshotId: createdScreenshot.screenshot.id,
-                preview: `http://localhost:3001/${createdScreenshot.screenshot.file_path}`
+                preview: `http://localhost:3001/api/screenshots/${createdScreenshot.screenshot.id}`
               }
             }
             return updatedFiles
@@ -1524,27 +1527,19 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                 setMaximizedImageName(file.customName);
                               }}
                             >
-                              <img
-                                src={file.preview}
-                                alt={`Screenshot ${index + 1}`}
-                                className="w-full h-40 object-cover transition-transform duration-200 group-hover:scale-105"
-                                draggable={false}
-                                onError={(e) => {
-                                  console.error('Failed to load image:', file.preview)
-                                  console.error('File details:', file)
-                                  // Test if we can reach the URL
-                                  fetch(file.preview)
-                                    .then(response => console.log('Direct fetch result:', response.status, response.statusText))
-                                    .catch(err => console.error('Direct fetch error:', err))
-                                  
-                                  // Show a placeholder or keep the broken image
-                                  e.currentTarget.style.backgroundColor = '#f3f4f6'
-                                  e.currentTarget.style.display = 'flex'
-                                  e.currentTarget.style.alignItems = 'center'
-                                  e.currentTarget.style.justifyContent = 'center'
-                                  e.currentTarget.innerHTML = '<div class="text-gray-500 text-sm text-center p-4">Image failed to load<br><span class="text-xs">' + file.originalName + '</span><br><span class="text-xs text-red-500">' + file.preview + '</span></div>'
-                                }}
-                              />
+                              {file.isExisting && file.screenshotId ? (
+                                <SecureImage
+                                  screenshotId={file.screenshotId.toString()}
+                                  alt={`Screenshot ${index + 1}`}
+                                  className="w-full h-40 object-cover transition-transform duration-200 group-hover:scale-105"
+                                />
+                              ) : (
+                                <img
+                                  src={file.preview}
+                                  alt={`Screenshot ${index + 1}`}
+                                  className="w-full h-40 object-cover transition-transform duration-200 group-hover:scale-105"
+                                />
+                              )}
                               {/* Maximize indicator */}
                               <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
                                 <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white bg-opacity-90 rounded-full p-2">

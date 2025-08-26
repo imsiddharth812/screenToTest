@@ -5,6 +5,14 @@ export interface Scenario {
   feature_id: number
   name: string
   description?: string
+  testing_intent?: string
+  user_story?: string
+  acceptance_criteria?: string
+  business_rules?: string
+  edge_cases?: string
+  test_environment?: string
+  coverage_level?: string
+  test_types?: string[]
   created_at: string
   updated_at: string
   screenshot_count?: number
@@ -13,11 +21,27 @@ export interface Scenario {
 export interface CreateScenarioData {
   name: string
   description?: string
+  testing_intent?: string
+  user_story?: string
+  acceptance_criteria?: string
+  business_rules?: string
+  edge_cases?: string
+  test_environment?: string
+  coverage_level?: string
+  test_types?: string[]
 }
 
 export interface UpdateScenarioData {
   name: string
   description?: string
+  testing_intent?: string
+  user_story?: string
+  acceptance_criteria?: string
+  business_rules?: string
+  edge_cases?: string
+  test_environment?: string
+  coverage_level?: string
+  test_types?: string[]
 }
 
 export const scenariosApi = {

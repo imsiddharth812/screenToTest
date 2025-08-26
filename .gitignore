@@ -164,3 +164,6 @@ config.local.json
 
 # Documentation build
 docs/_build/
+
+#Claude Files
+CLAUDE.md

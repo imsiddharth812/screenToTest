@@ -10,7 +10,7 @@ class UnifiedAIService {
         this.testCaseCache = new Map()
     }
 
-    async generateTestCases(screenshotPaths, ocrResults = [], pageNames = [], forceRegenerate = false) {
+    async generateTestCases(screenshotPaths, ocrResults = [], pageNames = [], forceRegenerate = false, scenarioContext = {}) {
         try {
             // Create cache key
             const cacheKey = this.createCacheKey(screenshotPaths, ocrResults, pageNames)
@@ -24,7 +24,7 @@ class UnifiedAIService {
             // Prepare images for analysis
             const imageMessages = await this.prepareImageMessages(screenshotPaths, pageNames)
             
-            const prompt = this.buildUnifiedPrompt(ocrResults, pageNames, screenshotPaths.length)
+            const prompt = this.buildUnifiedPrompt(ocrResults, pageNames, screenshotPaths.length, scenarioContext)
 
             console.log('Sending request to Claude for Unified AI Analysis...')
             const response = await this.makeRequestWithRetry({
@@ -100,7 +100,7 @@ class UnifiedAIService {
         return imageMessages
     }
 
-    buildUnifiedPrompt(ocrResults, pageNames, imageCount) {
+    buildUnifiedPrompt(ocrResults, pageNames, imageCount, scenarioContext = {}) {
         const detectedText = ocrResults.length > 0 ? 
             ocrResults.map((text, index) => {
                 const pageName = pageNames[index] || `Page ${index + 1}`
@@ -114,19 +114,20 @@ class UnifiedAIService {
         // Detect application domain from page names and OCR content
         const domainContext = this.detectApplicationDomain(pageNames, ocrResults)
         
-        return `You are an ULTIMATE QA engineer with SUPREME TESTING CAPABILITIES combining OCR text analysis, advanced visual analysis, and comprehensive business logic understanding. You have access to both extracted text content AND actual application screenshots to generate the MOST COMPREHENSIVE and THOROUGH test suite possible.
+        // Get intent-based prompt section
+        const intentSection = this.buildIntentBasedPrompt(scenarioContext)
+        
+        // Build context sections from scenario
+        const contextSections = this.buildContextSections(scenarioContext)
+        
+        return `You are an EXPERT QA ENGINEER specializing in manual testing with deep understanding of functional testing methodologies. You have access to both OCR-extracted text content AND visual screenshots to generate highly targeted, manual tester-friendly test cases.
 
-**SUPREME UNIFIED ANALYSIS APPROACH:**
-You have BOTH OCR-extracted text content AND visual screenshots. Use BOTH capabilities together to create the most comprehensive test suite:
+**TESTING APPROACH:**
+You combine OCR text analysis with visual screenshot analysis to create comprehensive, practical test cases that manual testers can easily execute.
 
-**DUAL ANALYSIS CAPABILITIES:**
-- Extract business logic, data fields, form labels, and functional flows from OCR text
-- Identify UI elements, buttons, forms, navigation paths, and visual layout from screenshots
-- Understand complete user workflows combining textual understanding with visual interface navigation
-- Detect all interactive elements through both text detection and visual confirmation
-- Validate business processes using both textual content and visual interface patterns
+${intentSection}
 
-**INTELLIGENT APPLICATION ANALYSIS:**
+**APPLICATION ANALYSIS:**
 Detected Application Domain: ${domainContext.domain}
 Key Business Functions: ${domainContext.functions.join(', ')}
 Focus Areas for Testing: ${domainContext.testAreas.join(', ')}
@@ -137,73 +138,40 @@ ${detectedText}
 **USER WORKFLOW SEQUENCE:**
 ${pageFlow}
 
-**IMPORTANT CONTEXT:** The screenshots above represent the EXACT SEQUENCE of the user workflow/application flow combined with OCR text analysis. This represents the natural progression through the application.
+${contextSections}
 
-**PRIMARY TEST TYPES TO GENERATE (Ultimate Comprehensive Analysis):**
-1. **End-to-End Tests**: Complete user workflows from start to finish using both text understanding and visual interface knowledge
-2. **Integration Tests**: Cross-module functionality testing using text analysis combined with visual identification of interface connections
-3. **Functional Tests**: Business functionality testing with dual validation using both OCR content and visual confirmation
+**DUAL ANALYSIS CAPABILITIES:**
+- Extract business logic, data fields, form labels, and functional flows from OCR text
+- Identify UI elements, buttons, forms, navigation paths, and visual layout from screenshots
+- Understand complete user workflows combining textual understanding with visual interface navigation
+- Detect all interactive elements through both text detection and visual confirmation
+- Validate business processes using both textual content and visual interface patterns
 
-**SUPREME COMPREHENSIVE TEST COVERAGE AREAS:**
-1. **Complete Business Workflow Testing**: End-to-end processes using both text understanding and visual flow confirmation
-2. **Advanced Integration Testing**: Cross-module interactions using text logic and visual interface validation
-3. **Comprehensive Form and Data Testing**: All input fields, dropdowns, and data entry using both OCR and visual analysis
-4. **Error Handling and Edge Cases**: Invalid inputs with recovery steps using text-based messages and visual error states
-5. **User Journey Completion**: Multi-step processes using text logic and visual navigation patterns
-6. **Business Rules and Logic Validation**: Functional validation using text rules and visual feedback confirmation
-7. **Complete Navigation Testing**: Workflow navigation using text content and visual interface flow
-8. **Data Processing and Validation**: Data accuracy using text content and visual presentation verification
-9. **Process Completion Verification**: Complete workflows using text logic and visual completion confirmation
-10. **Security and Permission Testing**: Access control using both textual indicators and visual security elements
+**MANUAL TESTING FOCUS:**
+- Create test cases that manual testers can execute step-by-step
+- Include detailed preconditions and setup instructions
+- Provide specific test data values and expected results
+- Focus on practical, executable test scenarios
+- Ensure comprehensive coverage while remaining manageable
 
-**CRITICAL SUCCESS REQUIREMENTS:**
-1. **Maximum Coverage**: Every test case must validate business functionality using both text identification and visual element identification
-2. **Complete Process Testing**: Include steps to complete ALL business processes using both OCR-identified content and visually identified components
-3. **Advanced Business Logic**: Validate ALL business rules and functionality using both textual and visual interface understanding
-4. **Cross-Screen Workflow Testing**: Test ALL business workflows that span multiple screens using dual analysis
-5. **Edge Case Coverage**: Include negative testing, error scenarios, and boundary conditions
-
-**COMPREHENSIVE TEST CASE REQUIREMENTS:**
-- Use dual analysis to identify ALL clickable elements, forms, and navigation paths
-- Reference specific UI elements using BOTH textual descriptions AND visual descriptions
-- Create detailed test steps using BOTH OCR-identified content AND visually observed components
-- Test complete business functionality using combined understanding
-- Generate comprehensive user workflows based on both textual and visual analysis
-- Validate ALL business processes using both text patterns and visual UI patterns
-
-**ULTIMATE TEST CASE STRUCTURE:**
+**TEST CASE STRUCTURE:**
 Each test case must include:
 - "type": One of (End-to-End, Integration, or Functional)
-- "title": Comprehensive business-focused title describing the complete workflow
-- "preconditions": EXTREMELY DETAILED setup requirements and prerequisites
-- "testSteps": COMPLETE step-by-step flow from first action to final result (numbered format)
-- "testData": Comprehensive realistic test data with specific values (bullet format)
+- "title": Clear, descriptive title focusing on the specific functionality being tested
+- "preconditions": Detailed setup requirements and prerequisites
+- "testSteps": Complete step-by-step instructions (numbered format)
+- "testData": Realistic test data with specific values (bullet format)
 - "expectedResults": Detailed expected outcomes with specific success criteria (bullet format)
 
-**CRITICAL INSTRUCTIONS FOR MAXIMUM TEST GENERATION:**
-- Generate MINIMUM 20-25 DETAILED COMPREHENSIVE test cases for COMPLETE feature coverage achieving 90-95% testing coverage
-- Each test case must focus on COMPLETE BUSINESS FUNCTIONALITY using both text understanding and visual interface analysis
+**CRITICAL INSTRUCTIONS:**
+- Generate comprehensive test cases based on testing intent and coverage level
 - Always use page names in test steps: "${pageNames[0] || 'Page 1'}", "${pageNames[1] || 'Page 2'}", etc.
-- Write test cases for NOVICE TESTERS with extremely detailed, step-by-step instructions
-- Reference specific UI elements identified through BOTH OCR text content AND visual screenshots
+- Write test cases for MANUAL TESTERS with clear, step-by-step instructions
+- Reference specific UI elements identified through both OCR text content AND visual screenshots
 - Include detailed preconditions/prerequisites for each test case
-- Focus on COMPLETE BUSINESS LOGIC and FUNCTIONAL VALIDATION
-- Create comprehensive end-to-end business workflows with detailed navigation steps
-- **CRITICAL: FOLLOW COMPLETE WORKFLOW** - Every test case must start from the very first action and continue through to the final result
-- Each test step must logically flow into the next step, creating a complete sequence
-- Include BOTH positive testing (happy paths) AND negative testing (error scenarios, edge cases)
-- Test ALL major features, workflows, and business processes visible in the application
-- Ensure comprehensive coverage of ALL functional areas for maximum business value
-
-**ENHANCED COVERAGE REQUIREMENTS:**
-- Test ALL form submissions with various data combinations
-- Test ALL navigation paths and menu interactions
-- Test ALL data processing and validation scenarios
-- Test ALL error conditions and recovery workflows
-- Test ALL user permission levels and access scenarios
-- Test ALL integration points between different application modules
-- Test ALL business rule validations and calculations
-- Test ALL workflow completion scenarios from start to finish
+- Create comprehensive workflows with detailed navigation steps
+- Include both positive testing (happy paths) AND negative testing (error scenarios, edge cases)
+- Test all major features, workflows, and business processes visible in the application
 
 IMPORTANT: Your response must be a single, valid JSON object containing a 'testCases' array. Do not include any explanatory text, markdown formatting, or additional content outside of the JSON structure.
 
@@ -211,15 +179,166 @@ Example response format:
 {
   "testCases": [
     {
-      "type": "End-to-End",
-      "title": "Complete comprehensive business workflow test utilizing both OCR text analysis and visual interface validation",
-      "preconditions": "• System accessible with proper authentication\\n• Test data prepared based on both OCR-detected fields and visual elements\\n• All required permissions granted for complete workflow testing",
-      "testSteps": "1. Navigate to application entry point using both OCR-detected navigation text and visual interface elements\\n2. Complete authentication using OCR-identified login fields with visual confirmation of field states\\n3. Access main workflow area using both text-based navigation and visual interface confirmation\\n4. Execute complete business process using dual OCR+Visual element identification\\n5. Validate all results using both textual success indicators and visual confirmation elements",
-      "testData": "• Username from OCR field analysis: testuser@example.com\\n• Password for visual field interaction: SecurePass123\\n• Business data from dual analysis: comprehensive test values\\n• Expected success indicators: both text and visual confirmations",
-      "expectedResults": "• OCR-detected success messages display correctly\\n• Visual confirmation elements appear in correct positions\\n• Complete business workflow executes successfully\\n• All functional and visual validation criteria are met\\n• Business process completes with full data integrity"
+      "type": "Functional",
+      "title": "Login form validation with valid credentials",
+      "preconditions": "• Application is accessible\\n• Test user account exists\\n• Network connection is stable",
+      "testSteps": "1. Navigate to ${pageNames[0] || 'Page 1'}\\n2. Locate username field\\n3. Enter valid username\\n4. Locate password field\\n5. Enter valid password\\n6. Click login button\\n7. Verify successful login",
+      "testData": "• Username: testuser@example.com\\n• Password: SecurePass123",
+      "expectedResults": "• User is successfully authenticated\\n• Redirected to dashboard or main application\\n• Success message displayed\\n• User session is established"
     }
   ]
 }`
+    }
+
+    buildIntentBasedPrompt(scenarioContext) {
+        const intent = scenarioContext.testing_intent || 'comprehensive'
+        const coverage = scenarioContext.coverage_level || 'comprehensive'
+        
+        // Ensure testTypes is always an array
+        let testTypes = scenarioContext.test_types || ['positive', 'negative', 'edge_cases']
+        if (typeof testTypes === 'string') {
+            try {
+                testTypes = JSON.parse(testTypes)
+            } catch (e) {
+                testTypes = ['positive', 'negative', 'edge_cases']
+            }
+        }
+        if (!Array.isArray(testTypes)) {
+            testTypes = ['positive', 'negative', 'edge_cases']
+        }
+        
+        const intentPrompts = {
+            'form-validation': `**PRIMARY TESTING INTENT: FORM VALIDATION FOCUS**
+This scenario specifically focuses on comprehensive form validation testing including:
+- Input field validation (required fields, data types, format validation)
+- Error message validation and display
+- Field interactions and dependencies
+- Data sanitization and security validation
+- Form submission workflows and error handling
+- Field boundary testing and edge cases
+- User experience during form completion
+
+Generate test cases that thoroughly validate ALL form elements, input validations, error conditions, and user interactions with forms.`,
+
+            'user-journey': `**PRIMARY TESTING INTENT: USER JOURNEY TESTING**
+This scenario focuses on complete end-to-end user workflows including:
+- Multi-step process completion from start to finish
+- Navigation between different pages and sections
+- State persistence across the journey
+- User experience throughout the complete workflow
+- Process interruption and recovery scenarios
+- Data flow across multiple steps
+
+Generate test cases that validate complete user journeys and multi-step workflows.`,
+
+            'integration': `**PRIMARY TESTING INTENT: FEATURE INTEGRATION TESTING**
+This scenario focuses on how different components and features work together:
+- Data exchange between different modules
+- Component interactions and dependencies
+- Cross-functional workflows
+- System integration points
+- Feature interdependencies
+
+Generate test cases that validate how features integrate and work together.`,
+
+            'business-logic': `**PRIMARY TESTING INTENT: BUSINESS LOGIC VALIDATION**
+This scenario focuses on validating business rules and logic:
+- Calculation accuracy and business rule enforcement
+- Decision-making processes and logic flows
+- Data processing and transformation
+- Business process validation
+- Rule-based behavior testing
+
+Generate test cases that validate business logic and rule implementation.`,
+
+            'comprehensive': `**PRIMARY TESTING INTENT: COMPREHENSIVE TESTING**
+This scenario requires complete coverage including:
+- Functional validation of all features
+- End-to-end workflow testing
+- Integration between components
+- Error handling and edge cases
+- User experience validation
+
+Generate comprehensive test cases covering all aspects of the functionality.`
+        }
+
+        const coveragePrompts = {
+            'essential': 'Focus on core happy path scenarios and critical functionality only.',
+            'comprehensive': 'Include both happy path and common edge cases for thorough coverage.',
+            'exhaustive': 'Generate comprehensive coverage including rare edge cases and extensive boundary testing.'
+        }
+
+        const testTypePrompts = {
+            'positive': 'Include positive testing scenarios with valid inputs and expected flows',
+            'negative': 'Include negative testing scenarios with invalid inputs and error conditions',
+            'edge_cases': 'Include edge case testing with boundary values and unusual scenarios',
+            'security': 'Include basic security testing for input sanitization and validation'
+        }
+
+        const selectedTypes = testTypes.map(type => testTypePrompts[type]).filter(Boolean)
+
+        return `${intentPrompts[intent] || intentPrompts.comprehensive}
+
+**COVERAGE LEVEL: ${coverage.toUpperCase()}**
+${coveragePrompts[coverage]}
+
+**TEST TYPES TO INCLUDE:**
+${selectedTypes.map(type => `- ${type}`).join('\\n')}
+
+**ESTIMATED TEST CASES:** Generate approximately ${this.getEstimatedTestCount(intent, coverage, testTypes.length)} comprehensive test cases based on this intent and coverage level.`
+    }
+
+    buildContextSections(scenarioContext) {
+        let sections = []
+
+        if (scenarioContext.user_story) {
+            sections.push(`**USER STORY:**
+${scenarioContext.user_story}`)
+        }
+
+        if (scenarioContext.acceptance_criteria) {
+            sections.push(`**ACCEPTANCE CRITERIA:**
+${scenarioContext.acceptance_criteria}`)
+        }
+
+        if (scenarioContext.business_rules) {
+            sections.push(`**BUSINESS RULES:**
+${scenarioContext.business_rules}`)
+        }
+
+        if (scenarioContext.edge_cases) {
+            sections.push(`**EDGE CASES TO CONSIDER:**
+${scenarioContext.edge_cases}`)
+        }
+
+        if (scenarioContext.test_environment) {
+            sections.push(`**TEST ENVIRONMENT REQUIREMENTS:**
+${scenarioContext.test_environment}`)
+        }
+
+        return sections.join('\\n\\n')
+    }
+
+    getEstimatedTestCount(intent, coverage, testTypeCount) {
+        const baseMultipliers = {
+            'form-validation': 15,
+            'user-journey': 8,
+            'integration': 12,
+            'business-logic': 10,
+            'comprehensive': 18
+        }
+        
+        const coverageMultipliers = {
+            'essential': 0.6,
+            'comprehensive': 1.0,
+            'exhaustive': 1.4
+        }
+        
+        const base = baseMultipliers[intent] || 12
+        const coverageMultiplier = coverageMultipliers[coverage] || 1.0
+        const typeMultiplier = testTypeCount * 0.3 + 0.4
+        
+        return Math.round(base * coverageMultiplier * typeMultiplier)
     }
 
     parseTestCases(content) {

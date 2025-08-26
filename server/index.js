@@ -17,6 +17,61 @@ const PORT = process.env.SERVER_PORT || 3001
 // Initialize Unified AI Service
 const unifiedAIService = new UnifiedAIService()
 
+// Database migration function for new scenario columns
+function runMigrations() {
+  console.log('Running database migrations...')
+  
+  // Check if new columns exist, if not add them
+  db.get("PRAGMA table_info(scenarios)", (err, row) => {
+    if (err) {
+      console.error('Error checking table info:', err.message)
+      return
+    }
+    
+    // Get all columns in scenarios table
+    db.all("PRAGMA table_info(scenarios)", (err, rows) => {
+      if (err) {
+        console.error('Error getting table info:', err.message)
+        return
+      }
+      
+      const existingColumns = rows.map(row => row.name)
+      const newColumns = [
+        { name: 'testing_intent', sql: 'ALTER TABLE scenarios ADD COLUMN testing_intent VARCHAR(50) DEFAULT "comprehensive"' },
+        { name: 'user_story', sql: 'ALTER TABLE scenarios ADD COLUMN user_story TEXT' },
+        { name: 'acceptance_criteria', sql: 'ALTER TABLE scenarios ADD COLUMN acceptance_criteria TEXT' },
+        { name: 'business_rules', sql: 'ALTER TABLE scenarios ADD COLUMN business_rules TEXT' },
+        { name: 'edge_cases', sql: 'ALTER TABLE scenarios ADD COLUMN edge_cases TEXT' },
+        { name: 'test_environment', sql: 'ALTER TABLE scenarios ADD COLUMN test_environment TEXT' },
+        { name: 'coverage_level', sql: 'ALTER TABLE scenarios ADD COLUMN coverage_level VARCHAR(20) DEFAULT "comprehensive"' },
+        { name: 'test_types', sql: 'ALTER TABLE scenarios ADD COLUMN test_types JSON DEFAULT \'["positive","negative","edge_cases"]\'' }
+      ]
+      
+      let migrationsRun = 0
+      newColumns.forEach(column => {
+        if (!existingColumns.includes(column.name)) {
+          db.run(column.sql, (err) => {
+            if (err) {
+              console.error(`Error adding column ${column.name}:`, err.message)
+            } else {
+              console.log(`✓ Added column: ${column.name}`)
+            }
+            migrationsRun++
+            if (migrationsRun === newColumns.length) {
+              console.log('Database migrations completed successfully')
+            }
+          })
+        } else {
+          migrationsRun++
+          if (migrationsRun === newColumns.length) {
+            console.log('Database migrations completed successfully')
+          }
+        }
+      })
+    })
+  })
+}
+
 // Initialize SQLite database
 const db = new sqlite3.Database('./database.db', (err) => {
   if (err) {
@@ -88,6 +143,14 @@ const db = new sqlite3.Database('./database.db', (err) => {
             feature_id INTEGER NOT NULL,
             name VARCHAR(150) NOT NULL,
             description TEXT,
+            testing_intent VARCHAR(50) DEFAULT 'comprehensive',
+            user_story TEXT,
+            acceptance_criteria TEXT,
+            business_rules TEXT,
+            edge_cases TEXT,
+            test_environment TEXT,
+            coverage_level VARCHAR(20) DEFAULT 'comprehensive',
+            test_types JSON DEFAULT '["positive","negative","edge_cases"]',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (feature_id) REFERENCES features (id) ON DELETE CASCADE
@@ -163,6 +226,9 @@ const db = new sqlite3.Database('./database.db', (err) => {
               })
             })
             console.log('Database indexes created successfully')
+            
+            // Run database migrations for existing scenarios table
+            runMigrations()
           }
         }
       })
@@ -195,8 +261,54 @@ const authenticateToken = (req, res, next) => {
 app.use(cors())
 app.use(express.json())
 
-// Serve static files from screenshots directory (using path.join for cross-platform compatibility)
-app.use('/screenshots', express.static(path.join(__dirname, '..', 'screenshots')))
+// Protected screenshot serving - users can only access their own screenshots
+app.get('/api/screenshots/:screenshotId', authenticateToken, async (req, res) => {
+  try {
+    const screenshotId = req.params.screenshotId
+    
+    // Verify screenshot exists and user has access to it
+    const sql = `
+      SELECT sc.file_path, sc.original_name 
+      FROM screenshots sc
+      JOIN scenarios s ON sc.scenario_id = s.id
+      JOIN features f ON s.feature_id = f.id
+      JOIN projects p ON f.project_id = p.id
+      WHERE sc.id = ? AND p.user_id = ?
+    `
+    
+    const screenshot = await new Promise((resolve, reject) => {
+      db.get(sql, [screenshotId, req.user.userId], (err, row) => {
+        if (err) reject(err)
+        else resolve(row)
+      })
+    })
+    
+    if (!screenshot) {
+      return res.status(404).json({ error: 'Screenshot not found or access denied' })
+    }
+    
+    // Construct full file path
+    const filePath = path.join(__dirname, screenshot.file_path)
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error(`Screenshot file not found: ${filePath}`)
+      return res.status(404).json({ error: 'Screenshot file not found' })
+    }
+    
+    // Set proper headers
+    res.setHeader('Content-Type', 'image/png')
+    res.setHeader('Cache-Control', 'private, max-age=3600') // Cache for 1 hour
+    res.setHeader('Content-Disposition', `inline; filename="${screenshot.original_name}"`)
+    
+    // Serve the file securely
+    res.sendFile(path.resolve(filePath))
+    
+  } catch (error) {
+    console.error('Error serving screenshot:', error)
+    res.status(500).json({ error: 'Failed to serve screenshot' })
+  }
+})
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -463,6 +575,9 @@ app.post('/api/projects', authenticateToken, (req, res) => {
   db.run(sql, [req.user.userId, name.trim(), description?.trim() || null], function(err) {
     if (err) {
       console.error('Error creating project:', err.message)
+      if (err.message.includes('FOREIGN KEY constraint failed')) {
+        return res.status(401).json({ error: 'Authentication session invalid. Please log in again.' })
+      }
       return res.status(500).json({ error: 'Failed to create project' })
     }
     
@@ -827,7 +942,18 @@ app.get('/api/features/:featureId/scenarios', authenticateToken, (req, res) => {
 // Create new scenario
 app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => {
   const featureId = req.params.featureId
-  const { name, description } = req.body
+  const { 
+    name, 
+    description, 
+    testing_intent = 'comprehensive',
+    user_story,
+    acceptance_criteria,
+    business_rules,
+    edge_cases,
+    test_environment,
+    coverage_level = 'comprehensive',
+    test_types = ['positive', 'negative', 'edge_cases']
+  } = req.body
   
   // Validation
   if (!name || name.trim().length === 0) {
@@ -855,8 +981,24 @@ app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => 
       return res.status(404).json({ error: 'Feature not found' })
     }
     
-    const insertSql = 'INSERT INTO scenarios (feature_id, name, description) VALUES (?, ?, ?)'
-    db.run(insertSql, [featureId, name.trim(), description?.trim() || null], function(err) {
+    const insertSql = `INSERT INTO scenarios 
+      (feature_id, name, description, testing_intent, user_story, acceptance_criteria, 
+       business_rules, edge_cases, test_environment, coverage_level, test_types) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    
+    db.run(insertSql, [
+      featureId, 
+      name.trim(), 
+      description?.trim() || null,
+      testing_intent,
+      user_story?.trim() || null,
+      acceptance_criteria?.trim() || null,
+      business_rules?.trim() || null,
+      edge_cases?.trim() || null,
+      test_environment?.trim() || null,
+      coverage_level,
+      JSON.stringify(test_types)
+    ], function(err) {
       if (err) {
         console.error('Error creating scenario:', err.message)
         return res.status(500).json({ error: 'Failed to create scenario' })
@@ -878,7 +1020,18 @@ app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => 
 // Update scenario
 app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
   const scenarioId = req.params.id
-  const { name, description } = req.body
+  const { 
+    name, 
+    description, 
+    testing_intent,
+    user_story,
+    acceptance_criteria,
+    business_rules,
+    edge_cases,
+    test_environment,
+    coverage_level,
+    test_types
+  } = req.body
   
   // Validation
   if (!name || name.trim().length === 0) {
@@ -907,8 +1060,25 @@ app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Scenario not found' })
     }
     
-    const updateSql = 'UPDATE scenarios SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
-    db.run(updateSql, [name.trim(), description?.trim() || null, scenarioId], function(err) {
+    const updateSql = `UPDATE scenarios SET 
+      name = ?, description = ?, testing_intent = ?, user_story = ?, acceptance_criteria = ?,
+      business_rules = ?, edge_cases = ?, test_environment = ?, coverage_level = ?, 
+      test_types = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?`
+    
+    db.run(updateSql, [
+      name.trim(), 
+      description?.trim() || null,
+      testing_intent,
+      user_story?.trim() || null,
+      acceptance_criteria?.trim() || null,
+      business_rules?.trim() || null,
+      edge_cases?.trim() || null,
+      test_environment?.trim() || null,
+      coverage_level,
+      test_types ? JSON.stringify(test_types) : null,
+      scenarioId
+    ], function(err) {
       if (err) {
         console.error('Error updating scenario:', err.message)
         return res.status(500).json({ error: 'Failed to update scenario' })
@@ -1556,9 +1726,39 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     
     console.log(`Processing ${validScreenshotPaths.length} valid screenshots out of ${screenshotPaths.length} total`)
     
+    // Retrieve scenario context if scenarioId is provided
+    let scenarioContext = {}
+    if (scenarioId) {
+      try {
+        const scenario = await new Promise((resolve, reject) => {
+          db.get('SELECT * FROM scenarios WHERE id = ?', [scenarioId], (err, row) => {
+            if (err) reject(err)
+            else resolve(row)
+          })
+        })
+        
+        if (scenario) {
+          scenarioContext = {
+            testing_intent: scenario.testing_intent,
+            coverage_level: scenario.coverage_level,
+            test_types: scenario.test_types ? JSON.parse(scenario.test_types) : ['positive', 'negative', 'edge_cases'],
+            user_story: scenario.user_story,
+            acceptance_criteria: scenario.acceptance_criteria,
+            business_rules: scenario.business_rules,
+            edge_cases: scenario.edge_cases,
+            test_environment: scenario.test_environment
+          }
+          console.log('Retrieved scenario context:', scenarioContext.testing_intent, scenarioContext.coverage_level)
+        }
+      } catch (error) {
+        console.error('Error retrieving scenario context:', error)
+        // Continue with default context if retrieval fails
+      }
+    }
+    
     try {
       // Generate test cases using Unified AI service (combines OCR + Vision)
-      const testCases = await unifiedAIService.generateTestCases(validScreenshotPaths, validOcrResults, validPageNames)
+      const testCases = await unifiedAIService.generateTestCases(validScreenshotPaths, validOcrResults, validPageNames, false, scenarioContext)
       
       if (testCases && testCases.allTestCases && testCases.allTestCases.length > 0) {
         // Store in database with analysis_type as 'unified'
