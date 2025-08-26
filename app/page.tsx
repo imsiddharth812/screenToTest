@@ -59,30 +59,12 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
   const [isHelpPanelOpen, setIsHelpPanelOpen] = useState(false)
   const [showHelpHint, setShowHelpHint] = useState(false)
 
-  // Analysis type selection states
-  const [showAnalysisModal, setShowAnalysisModal] = useState(false)
-  const [analysisOptions, setAnalysisOptions] = useState<any[]>([])
-  const [selectedAnalysisType, setSelectedAnalysisType] = useState<string>('standard')
+  // Unified analysis approach - no modal needed
   
   // Test case history state
   const [scenarioTestCases, setScenarioTestCases] = useState<{[scenarioId: number]: any[]}>({})
   const [expandedScenarios, setExpandedScenarios] = useState<Set<number>>(new Set())
 
-  // Load analysis options on component mount
-  useEffect(() => {
-    const fetchAnalysisOptions = async () => {
-      try {
-        const response = await fetch('http://localhost:3001/api/analysis-options')
-        if (response.ok) {
-          const data = await response.json()
-          setAnalysisOptions(data.options)
-        }
-      } catch (error) {
-        console.error('Failed to fetch analysis options:', error)
-      }
-    }
-    fetchAnalysisOptions()
-  }, [])
 
   // Load data on component mount
   useEffect(() => {
@@ -416,9 +398,24 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
 
   const handleFeatureSuccess = (feature: Feature) => {
     if (featureModal.mode === 'create') {
+      // Add new feature to both features state and featuresPerProject state
       setFeatures([...features, feature])
+      if (selectedProject) {
+        setFeaturesPerProject(prev => ({
+          ...prev,
+          [selectedProject.id]: [...(prev[selectedProject.id] || []), feature]
+        }))
+      }
     } else {
+      // Update existing feature in both states
       setFeatures(features.map(f => f.id === feature.id ? feature : f))
+      setFeaturesPerProject(prev => {
+        const updated = { ...prev }
+        Object.keys(updated).forEach(projectId => {
+          updated[Number(projectId)] = updated[Number(projectId)].map(f => f.id === feature.id ? feature : f)
+        })
+        return updated
+      })
       if (selectedFeature?.id === feature.id) {
         setSelectedFeature(feature)
       }
@@ -494,8 +491,27 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           break
         case 'feature':
           await featuresApi.delete(deleteModal.item.id)
-          setFeatures(features.filter(f => f.id !== deleteModal.item!.id))
-          if (selectedFeature?.id === deleteModal.item.id) {
+          const featureToDelete = deleteModal.item as Feature
+          
+          // Update both features state and featuresPerProject state
+          setFeatures(features.filter(f => f.id !== featureToDelete.id))
+          setFeaturesPerProject(prev => {
+            const updated = { ...prev }
+            // Remove the feature from its project's feature list
+            Object.keys(updated).forEach(projectId => {
+              updated[Number(projectId)] = updated[Number(projectId)].filter(f => f.id !== featureToDelete.id)
+            })
+            return updated
+          })
+          
+          // Clear related scenarios for this feature
+          setScenariosPerFeature(prev => {
+            const updated = { ...prev }
+            delete updated[featureToDelete.id]
+            return updated
+          })
+          
+          if (selectedFeature?.id === featureToDelete.id) {
             setSelectedFeature(null)
             setSelectedScenario(null)
             setScenarios([])
@@ -798,14 +814,8 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       formData.append('pageNames', JSON.stringify(pageNames))
       formData.append('scenarioId', selectedScenario.id.toString())
 
-      // Determine API endpoint based on selected analysis type
-      const apiEndpoints: Record<string, string> = {
-        'standard': '/api/generate-testcases',
-        'vision': '/api/generate-testcases-vision',
-        'comprehensive': '/api/generate-testcases-comprehensive'
-      }
-      
-      const endpoint = apiEndpoints[selectedAnalysisType] || apiEndpoints['standard']
+      // Use unified API endpoint for all test case generation
+      const endpoint = '/api/generate-testcases'
       
       const response = await fetch(`http://localhost:3001${endpoint}`, {
         method: 'POST',
@@ -1213,37 +1223,21 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                             }}
                                           >
                                             {/* Gradient Header */}
-                                            <div className={`h-0.5 ${
-                                              testCaseSet.analysisType === 'vision' 
-                                                ? 'bg-gradient-to-r from-blue-500 to-indigo-600' 
-                                                : testCaseSet.analysisType === 'comprehensive'
-                                                ? 'bg-gradient-to-r from-purple-500 to-pink-600'
-                                                : 'bg-gradient-to-r from-cyan-500 to-blue-600'
-                                            }`}></div>
+                                            <div className="h-0.5 bg-gradient-to-r from-blue-600 to-purple-600"></div>
                                             
                                             <div className="p-3">
                                               {/* Card Top Section */}
                                               <div className="flex justify-between items-start mb-2.5">
                                                 <div className="flex items-center gap-2">
                                                   {/* Icon */}
-                                                  <div className={`w-5 h-5 rounded flex items-center justify-center text-xs text-white ${
-                                                    testCaseSet.analysisType === 'vision' 
-                                                      ? 'bg-gradient-to-br from-blue-500 to-indigo-600' 
-                                                      : testCaseSet.analysisType === 'comprehensive'
-                                                      ? 'bg-gradient-to-br from-purple-500 to-pink-600'
-                                                      : 'bg-gradient-to-br from-cyan-500 to-blue-600'
-                                                  }`}>
-                                                    {testCaseSet.analysisType === 'standard' && '📊'}
-                                                    {testCaseSet.analysisType === 'vision' && '👁'}
-                                                    {testCaseSet.analysisType === 'comprehensive' && '🔬'}
+                                                  <div className="w-5 h-5 rounded flex items-center justify-center text-xs text-white bg-gradient-to-br from-blue-600 to-purple-600">
+                                                    🚀
                                                   </div>
                                                   
                                                   {/* Info */}
                                                   <div>
                                                     <h4 className="text-sm font-semibold text-gray-900 leading-tight">
-                                                      {testCaseSet.analysisType === 'standard' && 'Standard Analysis'}
-                                                      {testCaseSet.analysisType === 'vision' && 'Vision Analysis'}
-                                                      {testCaseSet.analysisType === 'comprehensive' && 'Comprehensive'}
+                                                      Unified AI Analysis
                                                     </h4>
                                                     <p className="text-xs text-gray-600">
                                                       {testCaseSet.totalCount} test cases
@@ -1337,19 +1331,17 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                       {files.length} / 25 screenshots
                     </span>
                     <button
-                      onClick={() => setShowAnalysisModal(true)}
+                      onClick={generateTestCases}
                       disabled={files.length === 0 || isGenerating}
                       className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white px-4 py-2 rounded-lg font-medium transition-all disabled:cursor-not-allowed"
                     >
                       {isGenerating ? (
                         <div className="flex items-center gap-2">
                           <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                          {selectedAnalysisType === 'vision' ? 'Vision AI Analyzing...' :
-                           selectedAnalysisType === 'comprehensive' ? 'Comprehensive Analysis...' :
-                           'Generating...'}
+                          Unified AI Analysis...
                         </div>
                       ) : (
-                        'Choose Analysis & Generate'
+                        'Generate Test Cases'
                       )}
                     </button>
                   </div>
@@ -1933,118 +1925,6 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         </div>
       )}
 
-      {/* Analysis Type Selection Modal */}
-      {showAnalysisModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={() => setShowAnalysisModal(false)}
-        >
-          <div 
-            className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <span>⚡</span>
-                Choose Analysis Type
-              </h2>
-              <button
-                onClick={() => setShowAnalysisModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {analysisOptions.map((option) => {
-                const isSelected = selectedAnalysisType === option.id
-                const isRecommended = option.id === 'standard'
-                
-                return (
-                  <div
-                    key={option.id}
-                    className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                      isSelected 
-                        ? 'border-blue-500 bg-blue-50' 
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => setSelectedAnalysisType(option.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-gray-900">{option.name}</h3>
-                          {isRecommended && (
-                            <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">
-                              Recommended
-                            </span>
-                          )}
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                            option.estimatedCost === 'Low' ? 'bg-green-100 text-green-800' :
-                            option.estimatedCost === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {option.estimatedCost} Cost
-                          </span>
-                        </div>
-                        <p className="text-gray-600 text-sm mb-3">{option.description}</p>
-                        
-                        <div className="mb-3">
-                          <h4 className="font-medium text-gray-900 text-sm mb-1">Features:</h4>
-                          <ul className="text-sm text-gray-600 space-y-1">
-                            {option.features.map((feature: string, index: number) => (
-                              <li key={index} className="flex items-center gap-2">
-                                <span className="text-green-500">✓</span>
-                                {feature}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        
-                        <div className="text-sm text-gray-500">
-                          <span className="font-medium">Processing Time:</span> {option.processingTime}
-                        </div>
-                      </div>
-                      
-                      <div className="ml-4">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                        }`}>
-                          {isSelected && (
-                            <div className="w-2 h-2 bg-white rounded-full"></div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="flex items-center justify-between mt-6 pt-4 border-t">
-              <button
-                onClick={() => setShowAnalysisModal(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowAnalysisModal(false)
-                  generateTestCases()
-                }}
-                disabled={!selectedAnalysisType}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white px-6 py-2 rounded-lg font-medium transition-all disabled:cursor-not-allowed"
-              >
-                Generate Test Cases
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modals */}
       <ProjectModal

@@ -155,25 +155,69 @@ function Results() {
   };
 
   const regenerateTestCases = async () => {
-    if (!testCases?._sessionId) {
-      alert("Cannot regenerate - session expired. Please upload screenshots again.");
+    // Handle unified approach (with scenario and screenshots) or legacy session approach
+    if (!testCases?._sessionId && !(testCases?.scenarioId && testCases?.screenshots)) {
+      alert("Cannot regenerate - session expired or missing screenshot information. Please upload screenshots again.");
       return;
     }
 
     setIsRegenerating(true);
     
     try {
-      const response = await fetch("http://localhost:3001/api/regenerate-testcases", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ sessionId: testCases._sessionId }),
-      });
+      let response;
+      
+      if (testCases._sessionId) {
+        // Legacy session-based regeneration
+        response = await fetch("http://localhost:3001/api/regenerate-testcases", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ sessionId: testCases._sessionId }),
+        });
+      } else {
+        // Unified approach - regenerate using scenario and screenshots
+        const formData = new FormData();
+        
+        // Add screenshots to form data (we'll need to fetch them from the stored paths)
+        for (let i = 0; i < testCases.screenshots!.length; i++) {
+          const screenshot = testCases.screenshots![i];
+          try {
+            const response = await fetch(screenshot.preview);
+            const blob = await response.blob();
+            const file = new File([blob], screenshot.originalName, { type: blob.type });
+            formData.append(`image${String(i).padStart(3, '0')}`, file);
+          } catch (error) {
+            console.error('Failed to fetch screenshot:', screenshot.originalName, error);
+          }
+        }
+        
+        // Add page names and scenario ID
+        const pageNames = testCases.screenshots!.map(s => s.customName);
+        formData.append('pageNames', JSON.stringify(pageNames));
+        formData.append('scenarioId', testCases.scenarioId!.toString());
+        
+        response = await fetch("http://localhost:3001/api/generate-testcases", {
+          method: "POST",
+          body: formData,
+        });
+      }
 
       if (response.ok) {
         const result = await response.json();
-        result._sessionId = testCases._sessionId; // Preserve session ID
+        
+        // Preserve important metadata
+        if (testCases._sessionId) {
+          result._sessionId = testCases._sessionId;
+        }
+        if (testCases.scenarioId) {
+          result.scenarioId = testCases.scenarioId;
+          result.scenarioName = testCases.scenarioName;
+          result.projectName = testCases.projectName;
+          result.featureName = testCases.featureName;
+          result.screenshots = testCases.screenshots;
+        }
+        
         setTestCases(result);
         localStorage.setItem("testCases", JSON.stringify(result));
         
@@ -265,7 +309,7 @@ function Results() {
             >
               ← Back to Projects
             </Link>
-            {testCases._sessionId && (
+            {(testCases._sessionId || (testCases.scenarioId && testCases.screenshots)) && (
               <button
                 onClick={regenerateTestCases}
                 disabled={isRegenerating}
