@@ -17,6 +17,164 @@ const PORT = process.env.SERVER_PORT || 3001
 // Initialize Unified AI Service
 const unifiedAIService = new UnifiedAIService()
 
+// Database integrity check and cleanup function
+function performIntegrityCheck() {
+  console.log('🔍 Performing database integrity check...')
+  
+  // Check for orphaned screenshots (files exist but no database record)
+  checkOrphanedFiles()
+  
+  // Check for orphaned database records (database record exists but no file)
+  checkOrphanedDatabaseRecords()
+  
+  // Check for orphaned test_cases (scenario_id doesn't exist)
+  checkOrphanedTestCases()
+  
+  console.log('✅ Database integrity check completed')
+}
+
+// Check for files that exist but have no database record
+function checkOrphanedFiles() {
+  const screenshotsDir = path.join(__dirname, 'screenshots')
+  
+  if (!fs.existsSync(screenshotsDir)) {
+    console.log('📁 Screenshots directory does not exist, creating it...')
+    fs.mkdirSync(screenshotsDir, { recursive: true })
+    return
+  }
+  
+  fs.readdir(screenshotsDir, (err, files) => {
+    if (err) {
+      console.error('Error reading screenshots directory:', err.message)
+      return
+    }
+    
+    // Filter out directories and hidden files
+    const imageFiles = files.filter(file => 
+      file.match(/\.(png|jpg|jpeg|gif|webp)$/i) && !file.startsWith('.')
+    )
+    
+    if (imageFiles.length === 0) {
+      console.log('📁 No screenshot files found in directory')
+      return
+    }
+    
+    // Check each file against database
+    db.all('SELECT filename FROM screenshots', (err, dbRecords) => {
+      if (err) {
+        console.error('Error querying screenshots:', err.message)
+        return
+      }
+      
+      const dbFilenames = new Set(dbRecords.map(record => record.filename))
+      const orphanedFiles = imageFiles.filter(file => !dbFilenames.has(file))
+      
+      if (orphanedFiles.length > 0) {
+        console.log(`🗑️  Found ${orphanedFiles.length} orphaned files (no database record):`)
+        orphanedFiles.forEach(file => {
+          console.log(`   - ${file}`)
+          // Remove orphaned files
+          const filePath = path.join(screenshotsDir, file)
+          fs.unlink(filePath, (unlinkErr) => {
+            if (unlinkErr) {
+              console.error(`   ❌ Failed to delete ${file}:`, unlinkErr.message)
+            } else {
+              console.log(`   ✅ Deleted orphaned file: ${file}`)
+            }
+          })
+        })
+      } else {
+        console.log('✅ No orphaned files found')
+      }
+    })
+  })
+}
+
+// Check for database records that have no corresponding file
+function checkOrphanedDatabaseRecords() {
+  db.all('SELECT id, filename, file_path FROM screenshots', (err, records) => {
+    if (err) {
+      console.error('Error querying screenshots:', err.message)
+      return
+    }
+    
+    if (records.length === 0) {
+      console.log('📝 No screenshot records in database')
+      return
+    }
+    
+    const orphanedRecords = []
+    let checkedCount = 0
+    
+    records.forEach(record => {
+      const fullPath = path.join(__dirname, record.file_path)
+      
+      fs.access(fullPath, fs.constants.F_OK, (accessErr) => {
+        checkedCount++
+        
+        if (accessErr) {
+          orphanedRecords.push(record)
+        }
+        
+        // When all files have been checked
+        if (checkedCount === records.length) {
+          if (orphanedRecords.length > 0) {
+            console.log(`🗑️  Found ${orphanedRecords.length} orphaned database records (no file):`)
+            
+            // Delete orphaned database records
+            orphanedRecords.forEach(record => {
+              console.log(`   - ${record.filename} (ID: ${record.id})`)
+              db.run('DELETE FROM screenshots WHERE id = ?', [record.id], (deleteErr) => {
+                if (deleteErr) {
+                  console.error(`   ❌ Failed to delete record ${record.id}:`, deleteErr.message)
+                } else {
+                  console.log(`   ✅ Deleted orphaned database record: ${record.filename}`)
+                }
+              })
+            })
+          } else {
+            console.log('✅ No orphaned database records found')
+          }
+        }
+      })
+    })
+  })
+}
+
+// Check for orphaned test cases (scenario_id doesn't exist)
+function checkOrphanedTestCases() {
+  const sql = `
+    SELECT tc.id, tc.scenario_id 
+    FROM test_cases tc 
+    LEFT JOIN scenarios s ON tc.scenario_id = s.id 
+    WHERE s.id IS NULL
+  `
+  
+  db.all(sql, (err, orphanedTestCases) => {
+    if (err) {
+      console.error('Error checking orphaned test cases:', err.message)
+      return
+    }
+    
+    if (orphanedTestCases.length > 0) {
+      console.log(`🗑️  Found ${orphanedTestCases.length} orphaned test cases:`)
+      
+      orphanedTestCases.forEach(testCase => {
+        console.log(`   - Test case ID ${testCase.id} references non-existent scenario ${testCase.scenario_id}`)
+        db.run('DELETE FROM test_cases WHERE id = ?', [testCase.id], (deleteErr) => {
+          if (deleteErr) {
+            console.error(`   ❌ Failed to delete test case ${testCase.id}:`, deleteErr.message)
+          } else {
+            console.log(`   ✅ Deleted orphaned test case: ${testCase.id}`)
+          }
+        })
+      })
+    } else {
+      console.log('✅ No orphaned test cases found')
+    }
+  })
+}
+
 // Database migration function for new scenario columns
 function runMigrations() {
   console.log('Running database migrations...')
@@ -59,12 +217,16 @@ function runMigrations() {
             migrationsRun++
             if (migrationsRun === newColumns.length) {
               console.log('Database migrations completed successfully')
+              // Run integrity check after migrations
+              setTimeout(performIntegrityCheck, 1000)
             }
           })
         } else {
           migrationsRun++
           if (migrationsRun === newColumns.length) {
             console.log('Database migrations completed successfully')
+            // Run integrity check after migrations
+            setTimeout(performIntegrityCheck, 1000)
           }
         }
       })
@@ -250,8 +412,10 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
+      console.log('🔑 JWT verification failed:', err.message)
       return res.status(403).json({ error: 'Invalid or expired token' })
     }
+    console.log('🔑 JWT verified successfully for user:', user)
     req.user = user
     next()
   })
@@ -374,6 +538,20 @@ app.get('/api/health', (req, res) => {
     status: 'OK', 
     message: 'Server is running',
     timestamp: new Date().toISOString()
+  })
+})
+
+// Manual integrity check endpoint (protected)
+app.post('/api/admin/integrity-check', authenticateToken, (req, res) => {
+  console.log(`🔧 Manual integrity check triggered by user ${req.user.userId}`)
+  
+  // Run integrity check
+  performIntegrityCheck()
+  
+  res.json({ 
+    message: 'Database integrity check initiated',
+    timestamp: new Date().toISOString(),
+    note: 'Check server logs for detailed results'
   })
 })
 
@@ -1158,8 +1336,10 @@ app.delete('/api/scenarios/:id', authenticateToken, (req, res) => {
 const screenshotUpload = multer({ storage: screenshotStorage })
 
 // Get screenshots for a scenario
-app.get('/api/screenshots/:scenarioId', authenticateToken, (req, res) => {
+app.get('/api/scenarios/:scenarioId/screenshots', authenticateToken, (req, res) => {
   const scenarioId = req.params.scenarioId
+  console.log(`📸 GET /api/screenshots/${scenarioId} - User ID: ${req.user.userId}`)
+  console.log(`🔍 Token user object:`, req.user)
   
   // First check if scenario exists and project belongs to user
   const sql = `
@@ -1176,8 +1356,11 @@ app.get('/api/screenshots/:scenarioId', authenticateToken, (req, res) => {
     }
     
     if (!scenario) {
-      return res.status(404).json({ error: 'Scenario not found' })
+      console.log(`❌ Scenario ${scenarioId} not found for user ${req.user.userId}`)
+      return res.status(404).json({ error: 'Scenario not found or access denied' })
     }
+    
+    console.log(`✅ Scenario ${scenarioId} found for user ${req.user.userId}`)
     
     // Get screenshots for the scenario
     const screenshotsSql = 'SELECT * FROM screenshots WHERE scenario_id = ? ORDER BY created_at ASC'
@@ -1187,13 +1370,14 @@ app.get('/api/screenshots/:scenarioId', authenticateToken, (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch screenshots' })
       }
       
+      console.log(`📸 Found ${screenshots.length} screenshots for scenario ${scenarioId}`)
       res.json({ screenshots })
     })
   })
 })
 
 // Upload screenshot for a scenario
-app.post('/api/screenshots/:scenarioId', authenticateToken, screenshotUpload.single('screenshot'), (req, res) => {
+app.post('/api/scenarios/:scenarioId/screenshots', authenticateToken, screenshotUpload.single('screenshot'), (req, res) => {
   const scenarioId = req.params.scenarioId
   const { description } = req.body
   
@@ -1300,10 +1484,11 @@ app.put('/api/screenshots/:id', authenticateToken, (req, res) => {
 // Delete screenshot
 app.delete('/api/screenshots/:id', authenticateToken, (req, res) => {
   const screenshotId = req.params.id
+  console.log(`🗑️  DELETE /api/screenshots/${screenshotId} - User ID: ${req.user.userId}`)
   
   // First check if screenshot exists and project belongs to user
   const sql = `
-    SELECT sc.id, sc.file_path FROM screenshots sc
+    SELECT sc.id, sc.file_path, sc.filename FROM screenshots sc
     JOIN scenarios s ON sc.scenario_id = s.id 
     JOIN features f ON s.feature_id = f.id 
     JOIN projects p ON f.project_id = p.id 
@@ -1317,26 +1502,42 @@ app.delete('/api/screenshots/:id', authenticateToken, (req, res) => {
     }
     
     if (!screenshot) {
-      return res.status(404).json({ error: 'Screenshot not found' })
+      console.log(`❌ Screenshot ${screenshotId} not found for user ${req.user.userId}`)
+      return res.status(404).json({ error: 'Screenshot not found or access denied' })
     }
     
-    // Delete screenshot from database
+    console.log(`📝 Deleting screenshot: ${screenshot.filename} (${screenshot.file_path})`)
+    
+    // Delete screenshot from database first
     db.run('DELETE FROM screenshots WHERE id = ?', [screenshotId], function(err) {
       if (err) {
-        console.error('Error deleting screenshot:', err.message)
-        return res.status(500).json({ error: 'Failed to delete screenshot' })
+        console.error('Error deleting screenshot from database:', err.message)
+        return res.status(500).json({ error: 'Failed to delete screenshot from database' })
       }
+      
+      console.log(`✅ Deleted screenshot record from database: ${screenshot.filename}`)
       
       // Try to delete the physical file
-      try {
-        if (fs.existsSync(screenshot.file_path)) {
-          fs.unlinkSync(screenshot.file_path)
+      const fullPath = path.join(__dirname, screenshot.file_path)
+      fs.access(fullPath, fs.constants.F_OK, (accessErr) => {
+        if (accessErr) {
+          console.warn(`⚠️  Screenshot file already missing: ${screenshot.filename}`)
+          return res.json({ message: 'Screenshot deleted successfully (file was already missing)' })
         }
-      } catch (fileErr) {
-        console.warn('Warning: Could not delete screenshot file:', fileErr.message)
-      }
-      
-      res.json({ message: 'Screenshot deleted successfully' })
+        
+        fs.unlink(fullPath, (unlinkErr) => {
+          if (unlinkErr) {
+            console.error(`❌ Failed to delete screenshot file: ${screenshot.filename}`, unlinkErr.message)
+            return res.json({ 
+              message: 'Screenshot deleted from database but file deletion failed',
+              warning: 'File may still exist on disk'
+            })
+          }
+          
+          console.log(`✅ Deleted screenshot file: ${screenshot.filename}`)
+          res.json({ message: 'Screenshot deleted successfully' })
+        })
+      })
     })
   })
 })
@@ -2092,6 +2293,16 @@ app.get('/api/test-cases/:testCaseId', authenticateToken, async (req, res) => {
   }
 })
 
+// Schedule periodic integrity checks (every 24 hours)
+const INTEGRITY_CHECK_INTERVAL = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+
+setInterval(() => {
+  console.log('🕐 Running scheduled integrity check...')
+  performIntegrityCheck()
+}, INTEGRITY_CHECK_INTERVAL)
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
+  console.log(`🔍 Integrity checks will run every 24 hours`)
+  console.log(`📋 Manual integrity check: POST /api/admin/integrity-check`)
 })

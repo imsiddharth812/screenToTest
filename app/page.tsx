@@ -310,7 +310,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     try {
       const token = localStorage.getItem('authToken')
       console.log(`Fetching screenshots for scenario ${scenario.id}`)
-      const response = await fetch(`http://localhost:3001/api/screenshots/${scenario.id}`, {
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}/screenshots`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -578,7 +578,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         }
 
         const token = localStorage.getItem('authToken')
-        const response = await fetch(`http://localhost:3001/api/screenshots/${selectedScenario.id}`, {
+        const response = await fetch(`http://localhost:3001/api/scenarios/${selectedScenario.id}/screenshots`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`

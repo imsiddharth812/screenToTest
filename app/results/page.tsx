@@ -99,7 +99,7 @@ function Results() {
   const refreshScreenshotsFromServer = async (scenarioId: number, currentTestCases: TestCases) => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await fetch(`http://localhost:3001/api/screenshots/${scenarioId}`, {
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenarioId}/screenshots`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
