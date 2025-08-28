@@ -425,6 +425,9 @@ const authenticateToken = (req, res, next) => {
 app.use(cors())
 app.use(express.json())
 
+// Serve static files from screenshots directory
+app.use('/screenshots', express.static(path.join(__dirname, 'screenshots')))
+
 // Protected screenshot serving - users can only access their own screenshots
 app.get('/api/screenshots/:screenshotId', authenticateToken, async (req, res) => {
   try {

@@ -360,9 +360,10 @@ function Results() {
                           
                           // Try to construct proper server URL if it's not already correct
                           if (!currentSrc.includes('/screenshots/')) {
-                            // If screenshot has screenshotId, try to load from server
+                            // If screenshot has preview URL, use that, otherwise construct from screenshotId
                             if (screenshot.screenshotId) {
-                              target.src = `http://localhost:3001/screenshots/${screenshot.originalName}`;
+                              // Use the preview URL which should have the correct file path
+                              target.src = screenshot.preview;
                             }
                           }
                         }}
