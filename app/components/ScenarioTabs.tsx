@@ -132,29 +132,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     test_environment: scenario.test_environment || ''
   })
 
-  // Auto-save scenario data when formData changes (debounced)
-  useEffect(() => {
-    // Skip auto-save on initial load when formData is being populated from scenario props
-    if (formData.name === scenario.name && 
-        formData.description === scenario.description && 
-        formData.testing_intent === scenario.testing_intent &&
-        formData.coverage_level === scenario.coverage_level &&
-        JSON.stringify(formData.test_types) === JSON.stringify(scenario.test_types) &&
-        formData.user_story === scenario.user_story &&
-        formData.acceptance_criteria === scenario.acceptance_criteria &&
-        formData.business_rules === scenario.business_rules &&
-        formData.edge_cases === scenario.edge_cases &&
-        formData.test_environment === scenario.test_environment) {
-      return // No changes detected, skip auto-save
-    }
-
-    const timeoutId = setTimeout(() => {
-      console.log('Auto-saving configuration changes...')
-      handleSaveConfiguration(true) // Pass silent flag to avoid toast
-    }, 1500) // Debounce for 1.5 seconds to allow user to finish typing
-
-    return () => clearTimeout(timeoutId)
-  }, [formData, scenario])
+  // Remove auto-save functionality - only save when user clicks Save button
 
   // Load existing screenshots and test cases when scenario changes
   useEffect(() => {
@@ -230,7 +208,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     }
   }
 
-  const handleSaveConfiguration = async (silent = false) => {
+  const handleSaveConfiguration = async () => {
     setIsSaving(true)
     try {
       const token = localStorage.getItem('authToken')
@@ -247,24 +225,215 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
         setLastSaved(new Date())
-        if (!silent) {
-          showToast('Configuration saved successfully!', 'success')
-        }
+        showToast('Configuration saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
-        if (!silent) {
-          showToast(`Failed to save configuration: ${errorData.error}`, 'error')
-        } else {
-          console.error('Auto-save failed:', errorData.error)
-        }
+        showToast(`Failed to save configuration: ${errorData.error}`, 'error')
       }
     } catch (error) {
       console.error('Error saving configuration:', error)
-      if (!silent) {
-        showToast('Error saving configuration. Please try again.', 'error')
+      showToast('Error saving configuration. Please try again.', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Individual save functions for each context field
+  const handleSaveUserStory = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: scenario.description,
+          testing_intent: scenario.testing_intent,
+          coverage_level: scenario.coverage_level,
+          test_types: scenario.test_types,
+          user_story: formData.user_story, // Only this field gets updated
+          acceptance_criteria: scenario.acceptance_criteria,
+          business_rules: scenario.business_rules,
+          edge_cases: scenario.edge_cases,
+          test_environment: scenario.test_environment
+        })
+      })
+      
+      if (response.ok) {
+        const updatedScenario = await response.json()
+        onScenarioUpdate(updatedScenario.scenario)
+        showToast('User Story saved successfully!', 'success')
       } else {
-        console.error('Auto-save error:', error)
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
+        showToast(`Failed to save User Story: ${errorData.error}`, 'error')
       }
+    } catch (error) {
+      console.error('Error saving User Story:', error)
+      showToast('Error saving User Story. Please try again.', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveAcceptanceCriteria = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: scenario.description,
+          testing_intent: scenario.testing_intent,
+          coverage_level: scenario.coverage_level,
+          test_types: scenario.test_types,
+          user_story: scenario.user_story,
+          acceptance_criteria: formData.acceptance_criteria, // Only this field gets updated
+          business_rules: scenario.business_rules,
+          edge_cases: scenario.edge_cases,
+          test_environment: scenario.test_environment
+        })
+      })
+      
+      if (response.ok) {
+        const updatedScenario = await response.json()
+        onScenarioUpdate(updatedScenario.scenario)
+        showToast('Acceptance Criteria saved successfully!', 'success')
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
+        showToast(`Failed to save Acceptance Criteria: ${errorData.error}`, 'error')
+      }
+    } catch (error) {
+      console.error('Error saving Acceptance Criteria:', error)
+      showToast('Error saving Acceptance Criteria. Please try again.', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveBusinessRules = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: scenario.description,
+          testing_intent: scenario.testing_intent,
+          coverage_level: scenario.coverage_level,
+          test_types: scenario.test_types,
+          user_story: scenario.user_story,
+          acceptance_criteria: scenario.acceptance_criteria,
+          business_rules: formData.business_rules, // Only this field gets updated
+          edge_cases: scenario.edge_cases,
+          test_environment: scenario.test_environment
+        })
+      })
+      
+      if (response.ok) {
+        const updatedScenario = await response.json()
+        onScenarioUpdate(updatedScenario.scenario)
+        showToast('Business Rules saved successfully!', 'success')
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
+        showToast(`Failed to save Business Rules: ${errorData.error}`, 'error')
+      }
+    } catch (error) {
+      console.error('Error saving Business Rules:', error)
+      showToast('Error saving Business Rules. Please try again.', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveEdgeCases = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: scenario.description,
+          testing_intent: scenario.testing_intent,
+          coverage_level: scenario.coverage_level,
+          test_types: scenario.test_types,
+          user_story: scenario.user_story,
+          acceptance_criteria: scenario.acceptance_criteria,
+          business_rules: scenario.business_rules,
+          edge_cases: formData.edge_cases, // Only this field gets updated
+          test_environment: scenario.test_environment
+        })
+      })
+      
+      if (response.ok) {
+        const updatedScenario = await response.json()
+        onScenarioUpdate(updatedScenario.scenario)
+        showToast('Edge Cases saved successfully!', 'success')
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
+        showToast(`Failed to save Edge Cases: ${errorData.error}`, 'error')
+      }
+    } catch (error) {
+      console.error('Error saving Edge Cases:', error)
+      showToast('Error saving Edge Cases. Please try again.', 'error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveTestEnvironment = async () => {
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem('authToken')
+      const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: scenario.description,
+          testing_intent: scenario.testing_intent,
+          coverage_level: scenario.coverage_level,
+          test_types: scenario.test_types,
+          user_story: scenario.user_story,
+          acceptance_criteria: scenario.acceptance_criteria,
+          business_rules: scenario.business_rules,
+          edge_cases: scenario.edge_cases,
+          test_environment: formData.test_environment // Only this field gets updated
+        })
+      })
+      
+      if (response.ok) {
+        const updatedScenario = await response.json()
+        onScenarioUpdate(updatedScenario.scenario)
+        showToast('Test Environment saved successfully!', 'success')
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
+        showToast(`Failed to save Test Environment: ${errorData.error}`, 'error')
+      }
+    } catch (error) {
+      console.error('Error saving Test Environment:', error)
+      showToast('Error saving Test Environment. Please try again.', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -577,19 +746,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Save Status Indicator */}
-            {isSaving ? (
-              <div className="flex items-center gap-2 text-blue-600 text-sm">
-                <div className="animate-spin w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                Saving...
-              </div>
-            ) : lastSaved ? (
-              <div className="text-green-600 text-sm flex items-center gap-1">
-                <span>✓</span>
-                Saved {new Date(lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-            ) : null}
-            
             <span className="text-sm text-gray-600">
               {files.length} / 25 screenshots
             </span>
@@ -780,28 +936,13 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
               </div>
 
               {/* Save Button */}
-              <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                <div className="text-sm text-gray-500">
-                  {isSaving ? (
-                    <div className="flex items-center gap-2 text-blue-600">
-                      <div className="animate-spin w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                      Saving changes...
-                    </div>
-                  ) : lastSaved ? (
-                    <div className="flex items-center gap-2 text-green-600">
-                      <span>✓</span>
-                      Auto-saved at {new Date(lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  ) : (
-                    'Changes are saved automatically'
-                  )}
-                </div>
+              <div className="flex justify-end pt-4 border-t border-gray-200">
                 <button
-                  onClick={handleSaveConfiguration}
+                  onClick={() => handleSaveConfiguration()}
                   disabled={isSaving}
                   className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
                 >
-                  {isSaving ? 'Saving...' : 'Save Now'}
+                  {isSaving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
@@ -1079,6 +1220,15 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                     <p className="text-xs text-gray-500 mt-1">
                       Paste your Jira user story or requirement description here
                     </p>
+                    <div className="flex justify-end mt-4">
+                      <button
+                        onClick={handleSaveUserStory}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1097,6 +1247,15 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                     <p className="text-xs text-gray-500 mt-1">
                       Define the conditions that must be met for this scenario to be considered complete
                     </p>
+                    <div className="flex justify-end mt-4">
+                      <button
+                        onClick={handleSaveAcceptanceCriteria}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1115,6 +1274,15 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                     <p className="text-xs text-gray-500 mt-1">
                       Document business logic that affects testing scenarios
                     </p>
+                    <div className="flex justify-end mt-4">
+                      <button
+                        onClick={handleSaveBusinessRules}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1133,6 +1301,15 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                     <p className="text-xs text-gray-500 mt-1">
                       Specify edge cases and unusual scenarios that should be tested
                     </p>
+                    <div className="flex justify-end mt-4">
+                      <button
+                        onClick={handleSaveEdgeCases}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1151,34 +1328,17 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                     <p className="text-xs text-gray-500 mt-1">
                       Specify environment setup requirements and constraints
                     </p>
+                    <div className="flex justify-end mt-4">
+                      <button
+                        onClick={handleSaveTestEnvironment}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 )}
-              </div>
-
-              {/* Save Button */}
-              <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                <div className="text-sm text-gray-500">
-                  {isSaving ? (
-                    <div className="flex items-center gap-2 text-blue-600">
-                      <div className="animate-spin w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                      Saving changes...
-                    </div>
-                  ) : lastSaved ? (
-                    <div className="flex items-center gap-2 text-green-600">
-                      <span>✓</span>
-                      Auto-saved at {new Date(lastSaved).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  ) : (
-                    'Changes are saved automatically'
-                  )}
-                </div>
-                <button
-                  onClick={handleSaveConfiguration}
-                  disabled={isSaving}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                >
-                  {isSaving ? 'Saving...' : 'Save Now'}
-                </button>
               </div>
             </div>
           </div>
