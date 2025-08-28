@@ -107,6 +107,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
   const [testCases, setTestCases] = useState<any>(null)
   const [activeContextTab, setActiveContextTab] = useState('user_story')
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [expandedTestCases, setExpandedTestCases] = useState<Set<number>>(new Set())
   
   // Toast notifications
   const [toast, setToast] = useState<{
@@ -199,8 +200,77 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       
       if (response.ok) {
         const data = await response.json()
+        console.log('Loaded test cases:', data) // Debug log
         if (data.testCases && data.testCases.length > 0) {
-          setTestCases(data.testCases[0]) // Get the latest test case set
+          // Get the latest test case set (first item since they're ordered by updated_at DESC)
+          const latestTestCase = data.testCases[0]
+          console.log('Latest test case data:', latestTestCase)
+          console.log('Type of testCases:', typeof latestTestCase.testCases)
+          
+          // Extract test cases - they might be in different properties
+          let actualTestCases = []
+          
+          if (Array.isArray(latestTestCase.testCases)) {
+            // Direct array
+            actualTestCases = latestTestCase.testCases
+            console.log('Found direct array of test cases')
+          } else if (latestTestCase.testCases && typeof latestTestCase.testCases === 'object') {
+            // Object with nested properties
+            if (latestTestCase.testCases.allTestCases) {
+              actualTestCases = latestTestCase.testCases.allTestCases
+              console.log('Found nested allTestCases')
+            } else if (latestTestCase.testCases.testCases) {
+              actualTestCases = latestTestCase.testCases.testCases
+              console.log('Found nested testCases')
+            } else {
+              // Maybe it's an object that itself is the test cases array structure
+              actualTestCases = [latestTestCase.testCases]
+              console.log('Treating object as single test case')
+            }
+          } else if (typeof latestTestCase.testCases === 'string') {
+            // JSON string - parse it
+            console.log('Parsing JSON string:', latestTestCase.testCases.substring(0, 100) + '...')
+            try {
+              const parsed = JSON.parse(latestTestCase.testCases)
+              console.log('Parsed JSON:', parsed)
+              
+              if (Array.isArray(parsed)) {
+                actualTestCases = parsed
+              } else if (parsed.allTestCases) {
+                actualTestCases = parsed.allTestCases
+              } else if (parsed.testCases) {
+                actualTestCases = parsed.testCases
+              } else {
+                actualTestCases = [parsed] // Single test case
+              }
+            } catch (e) {
+              console.error('Failed to parse test cases JSON:', e)
+            }
+          }
+          
+          console.log('Final extracted test cases:', actualTestCases)
+          console.log('Number of test cases found:', actualTestCases.length)
+          
+          const testCaseData = {
+            testCases: actualTestCases, // This will be the actual array
+            timestamp: latestTestCase.createdAt,
+            id: latestTestCase.id,
+            scenarioId: latestTestCase.scenarioId,
+            analysisType: latestTestCase.analysisType,
+            totalCount: latestTestCase.totalCount,
+            functionalCount: latestTestCase.functionalCount,
+            endToEndCount: latestTestCase.endToEndCount,
+            integrationCount: latestTestCase.integrationCount,
+            uiCount: latestTestCase.uiCount,
+            createdAt: latestTestCase.createdAt,
+            updatedAt: latestTestCase.updatedAt
+            // Don't spread latestTestCase to avoid overwriting testCases property
+          }
+          
+          console.log('Setting test case state with:', testCaseData)
+          setTestCases(testCaseData)
+        } else {
+          console.log('No test cases found in response')
         }
       }
     } catch (error) {
@@ -727,6 +797,45 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         ? prev.test_types.filter(t => t !== testType)
         : [...prev.test_types, testType]
     }))
+  }
+
+  const toggleTestCase = (index: number) => {
+    setExpandedTestCases(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(index)) {
+        newSet.delete(index)
+      } else {
+        newSet.add(index)
+      }
+      return newSet
+    })
+  }
+
+  const navigateToResults = () => {
+    if (testCases && testCases.testCases) {
+      // Format data for Results page - it expects allTestCases, not testCases
+      const testCaseData = {
+        ...testCases,
+        allTestCases: testCases.testCases, // Results page expects this property name
+        scenarioId: scenario.id,
+        scenarioName: scenario.name,
+        // Get screenshot information if available
+        screenshots: files.length > 0 ? files.map(file => ({
+          id: file.id,
+          customName: file.customName,
+          originalName: file.originalName,
+          preview: file.isExisting && file.screenshotId ? 
+            `http://localhost:3001/api/screenshots/${file.screenshotId}` : 
+            file.preview,
+          isExisting: file.isExisting,
+          screenshotId: file.screenshotId
+        })) : []
+      }
+      
+      console.log('Sending to Results page:', testCaseData)
+      localStorage.setItem("testCases", JSON.stringify(testCaseData))
+      window.open('/results', '_blank')
+    }
   }
 
   const selectedIntent = TESTING_INTENTS.find(intent => intent.value === formData.testing_intent)
@@ -1351,64 +1460,164 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-800">
-                    Generated Test Cases ({testCases.testCases?.length || 0})
+                    Test Cases ({testCases.testCases?.length || 0})
                   </h3>
-                  <div className="text-sm text-gray-600">
-                    Generated: {new Date(testCases.timestamp).toLocaleString()}
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm text-gray-600">
+                      Generated: {new Date(testCases.timestamp).toLocaleString()}
+                    </div>
+                    <button
+                      onClick={navigateToResults}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2"
+                    >
+                      <span>📋</span>
+                      View All Tests
+                    </button>
                   </div>
                 </div>
                 
                 {testCases.testCases && testCases.testCases.length > 0 ? (
-                  <div className="space-y-4">
-                    {testCases.testCases.map((testCase: any, index: number) => (
-                      <div key={index} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
-                        <div className="flex items-start justify-between mb-4">
-                          <h4 className="text-lg font-medium text-gray-900 flex items-center gap-2">
-                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">
-                              #{index + 1}
-                            </span>
-                            {testCase.title}
-                          </h4>
-                          {testCase.priority && (
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              testCase.priority === 'High' 
-                                ? 'bg-red-100 text-red-800' 
-                                : testCase.priority === 'Medium'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-green-100 text-green-800'
-                            }`}>
-                              {testCase.priority} Priority
-                            </span>
-                          )}
-                        </div>
-                        
-                        {testCase.description && (
-                          <p className="text-gray-700 mb-4">{testCase.description}</p>
-                        )}
-                        
-                        <div className="space-y-3">
-                          {testCase.steps && (
-                            <div>
-                              <h5 className="font-medium text-gray-800 mb-2">Test Steps:</h5>
-                              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
-                                {testCase.steps.map((step: string, stepIndex: number) => (
-                                  <li key={stepIndex}>{step}</li>
-                                ))}
-                              </ol>
+                  <div className="space-y-3">
+                    {testCases.testCases.map((testCase: any, index: number) => {
+                      const isExpanded = expandedTestCases.has(index)
+                      
+                      return (
+                        <div key={index} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-sm transition-shadow">
+                          {/* Collapsible Header */}
+                          <div 
+                            className="p-4 cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between"
+                            onClick={() => toggleTestCase(index)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+                                {index + 1}
+                              </div>
+                              <h4 className="font-medium text-gray-900">
+                                {testCase.title || testCase.name || `Test Case ${index + 1}`}
+                              </h4>
+                              {testCase.priority && (
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                  testCase.priority === 'High' 
+                                    ? 'bg-red-100 text-red-800' 
+                                    : testCase.priority === 'Medium'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-green-100 text-green-800'
+                                }`}>
+                                  {testCase.priority}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">Click to {isExpanded ? 'collapse' : 'expand'}</span>
+                              <div className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Collapsible Content */}
+                          {isExpanded && (
+                            <div className="border-t border-gray-100 p-4 bg-gray-50">
+                              {testCase.description && (
+                                <div className="mb-4">
+                                  <p className="text-gray-700 text-sm">{testCase.description}</p>
+                                </div>
+                              )}
+                              
+                              <div className="space-y-4">
+                                {/* Test Steps */}
+                                {(() => {
+                                  const steps = testCase.steps || testCase.testSteps || testCase.actions
+                                  if (!steps) return null
+                                  
+                                  let stepsArray = []
+                                  if (Array.isArray(steps)) {
+                                    stepsArray = steps
+                                  } else if (typeof steps === 'string') {
+                                    stepsArray = steps.includes('\n') ? steps.split('\n').filter(s => s.trim()) : [steps]
+                                  } else if (typeof steps === 'object') {
+                                    stepsArray = Object.values(steps).filter(s => s && typeof s === 'string')
+                                  }
+                                  
+                                  if (stepsArray.length === 0) return null
+                                  
+                                  return (
+                                    <div>
+                                      <h5 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                                        <span>📋</span>
+                                        Test Steps:
+                                      </h5>
+                                      <div className="bg-white rounded-lg p-3 border">
+                                        <div className="space-y-2 text-sm text-gray-700">
+                                          {stepsArray.map((step: string, stepIndex: number) => {
+                                            const trimmedStep = String(step).trim()
+                                            
+                                            // Check if this is a main step (starts with number) or a sub-item (starts with dash)
+                                            const isMainStep = /^\d+\./.test(trimmedStep) || (!trimmedStep.startsWith('-') && !trimmedStep.startsWith('•'))
+                                            const isSubItem = trimmedStep.startsWith('-') || trimmedStep.startsWith('•')
+                                            
+                                            if (isSubItem) {
+                                              // Sub-item: just show with bullet point, no number
+                                              return (
+                                                <div key={stepIndex} className="flex gap-3 ml-8">
+                                                  <span className="text-gray-400 flex-shrink-0 mt-1">•</span>
+                                                  <span>{trimmedStep.replace(/^[-•]\s*/, '')}</span>
+                                                </div>
+                                              )
+                                            } else {
+                                              // Main step: show with blue number
+                                              // Extract step number if it exists, otherwise use stepIndex
+                                              const stepMatch = trimmedStep.match(/^(\d+)\.(.+)/)
+                                              const stepNumber = stepMatch ? stepMatch[1] : (stepIndex + 1).toString()
+                                              const stepText = stepMatch ? stepMatch[2].trim() : trimmedStep
+                                              
+                                              return (
+                                                <div key={stepIndex} className="flex gap-3">
+                                                  <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5">
+                                                    {stepNumber}
+                                                  </span>
+                                                  <span>{stepText}</span>
+                                                </div>
+                                              )
+                                            }
+                                          })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+                                
+                                {/* Expected Result */}
+                                {(() => {
+                                  const expected = testCase.expectedResult || testCase.expected || testCase.expectedOutcome
+                                  if (!expected) return null
+                                  
+                                  const expectedText = typeof expected === 'string' ? expected : 
+                                                     typeof expected === 'object' ? JSON.stringify(expected, null, 2) :
+                                                     String(expected)
+                                  
+                                  return (
+                                    <div>
+                                      <h5 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                                        <span>✅</span>
+                                        Expected Result:
+                                      </h5>
+                                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                        <p className="text-sm text-green-800 whitespace-pre-wrap">
+                                          {expectedText}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+                              </div>
                             </div>
                           )}
-                          
-                          {testCase.expectedResult && (
-                            <div>
-                              <h5 className="font-medium text-gray-800 mb-2">Expected Result:</h5>
-                              <p className="text-sm text-gray-700 bg-green-50 p-3 rounded-lg">
-                                {testCase.expectedResult}
-                              </p>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-12">
