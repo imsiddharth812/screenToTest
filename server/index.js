@@ -1112,7 +1112,13 @@ app.get('/api/features/:featureId/scenarios', authenticateToken, (req, res) => {
         return res.status(500).json({ error: 'Database error' })
       }
       
-      res.json({ scenarios })
+      // Parse JSON fields for each scenario
+      const parsedScenarios = scenarios.map(scenario => ({
+        ...scenario,
+        test_types: scenario.test_types ? JSON.parse(scenario.test_types) : ['positive', 'negative', 'edge_cases']
+      }))
+      
+      res.json({ scenarios: parsedScenarios })
     })
   })
 })
@@ -1189,7 +1195,13 @@ app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => 
           return res.status(500).json({ error: 'Scenario created but failed to retrieve' })
         }
         
-        res.status(201).json({ scenario })
+        // Parse JSON fields
+        const parsedScenario = {
+          ...scenario,
+          test_types: scenario.test_types ? JSON.parse(scenario.test_types) : ['positive', 'negative', 'edge_cases']
+        }
+        
+        res.status(201).json({ scenario: parsedScenario })
       })
     })
   })
@@ -1269,7 +1281,13 @@ app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
           return res.status(500).json({ error: 'Scenario updated but failed to retrieve' })
         }
         
-        res.json({ scenario: updatedScenario })
+        // Parse JSON fields
+        const parsedScenario = {
+          ...updatedScenario,
+          test_types: updatedScenario.test_types ? JSON.parse(updatedScenario.test_types) : ['positive', 'negative', 'edge_cases']
+        }
+        
+        res.json({ scenario: parsedScenario })
       })
     })
   })
@@ -1362,8 +1380,8 @@ app.get('/api/scenarios/:scenarioId/screenshots', authenticateToken, (req, res) 
     
     console.log(`✅ Scenario ${scenarioId} found for user ${req.user.userId}`)
     
-    // Get screenshots for the scenario
-    const screenshotsSql = 'SELECT * FROM screenshots WHERE scenario_id = ? ORDER BY created_at ASC'
+    // Get screenshots for the scenario ordered by display order, then by creation time
+    const screenshotsSql = 'SELECT * FROM screenshots WHERE scenario_id = ? ORDER BY order_index ASC, created_at ASC'
     db.all(screenshotsSql, [scenarioId], (err, screenshots) => {
       if (err) {
         console.error('Error fetching screenshots:', err.message)
@@ -1403,20 +1421,31 @@ app.post('/api/scenarios/:scenarioId/screenshots', authenticateToken, screenshot
       return res.status(404).json({ error: 'Scenario not found' })
     }
     
-    // Insert screenshot record
-    const insertSql = `
-      INSERT INTO screenshots (scenario_id, filename, original_name, custom_name, file_path, file_size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `
-    
-    const values = [
-      scenarioId,
-      req.file.filename,
-      req.file.originalname,
-      description?.trim() || req.file.originalname,
-      req.file.path,
-      req.file.size
-    ]
+    // Get the next order_index for this scenario
+    const maxOrderSql = 'SELECT COALESCE(MAX(order_index), -1) + 1 as next_order FROM screenshots WHERE scenario_id = ?'
+    db.get(maxOrderSql, [scenarioId], (err, orderResult) => {
+      if (err) {
+        console.error('Error getting next order index:', err.message)
+        return res.status(500).json({ error: 'Database error' })
+      }
+      
+      const nextOrder = orderResult.next_order
+      
+      // Insert screenshot record with order_index
+      const insertSql = `
+        INSERT INTO screenshots (scenario_id, filename, original_name, custom_name, file_path, file_size, order_index, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `
+      
+      const values = [
+        scenarioId,
+        req.file.filename,
+        req.file.originalname,
+        description?.trim() || req.file.originalname,
+        `screenshots/${req.file.filename}`, // Store relative path instead of absolute
+        req.file.size,
+        nextOrder
+      ]
     
     db.run(insertSql, values, function(err) {
       if (err) {
@@ -1434,13 +1463,14 @@ app.post('/api/scenarios/:scenarioId/screenshots', authenticateToken, screenshot
         res.json({ screenshot })
       })
     })
+    })
   })
 })
 
-// Update screenshot description
+// Update screenshot description and order
 app.put('/api/screenshots/:id', authenticateToken, (req, res) => {
   const screenshotId = req.params.id
-  const { description } = req.body
+  const { description, custom_name, order_index } = req.body
   
   // First check if screenshot exists and project belongs to user
   const sql = `
@@ -1461,8 +1491,28 @@ app.put('/api/screenshots/:id', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Screenshot not found' })
     }
     
-    const updateSql = 'UPDATE screenshots SET custom_name = ? WHERE id = ?'
-    db.run(updateSql, [description?.trim() || null, screenshotId], function(err) {
+    // Build dynamic update query
+    const updateFields = []
+    const updateValues = []
+    
+    if (description !== undefined || custom_name !== undefined) {
+      updateFields.push('custom_name = ?')
+      updateValues.push((description || custom_name)?.trim() || null)
+    }
+    
+    if (order_index !== undefined) {
+      updateFields.push('order_index = ?')
+      updateValues.push(order_index)
+    }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' })
+    }
+    
+    updateValues.push(screenshotId)
+    const updateSql = `UPDATE screenshots SET ${updateFields.join(', ')} WHERE id = ?`
+    
+    db.run(updateSql, updateValues, function(err) {
       if (err) {
         console.error('Error updating screenshot:', err.message)
         return res.status(500).json({ error: 'Failed to update screenshot' })
@@ -1537,6 +1587,58 @@ app.delete('/api/screenshots/:id', authenticateToken, (req, res) => {
           console.log(`✅ Deleted screenshot file: ${screenshot.filename}`)
           res.json({ message: 'Screenshot deleted successfully' })
         })
+      })
+    })
+  })
+})
+
+// Bulk reorder screenshots for a scenario
+app.put('/api/scenarios/:scenarioId/screenshots/reorder', authenticateToken, (req, res) => {
+  const scenarioId = req.params.scenarioId
+  const { screenshotIds } = req.body
+  
+  if (!Array.isArray(screenshotIds)) {
+    return res.status(400).json({ error: 'screenshotIds must be an array' })
+  }
+  
+  // First check if scenario exists and project belongs to user
+  const sql = `
+    SELECT s.id FROM scenarios s 
+    JOIN features f ON s.feature_id = f.id 
+    JOIN projects p ON f.project_id = p.id 
+    WHERE s.id = ? AND p.user_id = ?
+  `
+  
+  db.get(sql, [scenarioId, req.user.userId], (err, scenario) => {
+    if (err) {
+      console.error('Database error:', err.message)
+      return res.status(500).json({ error: 'Database error' })
+    }
+    
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found' })
+    }
+    
+    // Update order_index for each screenshot
+    let completedUpdates = 0
+    let hasError = false
+    
+    screenshotIds.forEach((screenshotId, index) => {
+      const updateSql = 'UPDATE screenshots SET order_index = ? WHERE id = ? AND scenario_id = ?'
+      db.run(updateSql, [index, screenshotId, scenarioId], function(err) {
+        if (err) {
+          console.error('Error updating screenshot order:', err.message)
+          if (!hasError) {
+            hasError = true
+            return res.status(500).json({ error: 'Failed to update screenshot order' })
+          }
+          return
+        }
+        
+        completedUpdates++
+        if (completedUpdates === screenshotIds.length && !hasError) {
+          res.json({ message: 'Screenshot order updated successfully' })
+        }
       })
     })
   })
@@ -1834,17 +1936,26 @@ const storeTestCases = (db, scenarioId, testCases, analysisType) => {
 app.post('/api/generate-testcases', upload.any(), async (req, res) => {
   try {
     console.log('Processing Unified AI test case generation request...')
+    console.log('Request body:', req.body)
+    console.log('Request files:', req.files?.length || 0, 'files')
     
     const files = req.files
-    if (!files || files.length < 1) {
+    const screenshotIds = req.body.screenshotIds || []
+    
+    // Handle both file uploads and existing screenshot IDs
+    if ((!files || files.length < 1) && (!screenshotIds || screenshotIds.length < 1)) {
       return res.status(400).json({ error: 'At least 1 image required' })
     }
 
-    if (files.length > 25) {
+    // Check total count limit
+    const totalCount = (files?.length || 0) + (screenshotIds?.length || 0)
+    if (totalCount > 25) {
       return res.status(400).json({ error: 'Maximum 25 images allowed for comprehensive testing' })
     }
 
-    console.log(`Processing ${files.length} images with Unified AI...`)
+    console.log(`Processing ${totalCount} images with Unified AI...`)
+    console.log(`- Uploaded files: ${files?.length || 0}`)
+    console.log(`- Existing screenshots: ${screenshotIds?.length || 0}`)
 
     // Get page names and scenario ID from request
     const pageNames = req.body.pageNames ? JSON.parse(req.body.pageNames) : []
@@ -1852,15 +1963,61 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     console.log('Page names received:', pageNames)
     console.log('Scenario ID received:', scenarioId)
 
-    // Sort files by originalname to maintain consistent order
-    files.sort((a, b) => a.originalname.localeCompare(b.originalname))
+    // Prepare files array combining uploaded files and existing screenshots
+    let allFiles = []
+    
+    // Add uploaded files
+    if (files && files.length > 0) {
+      // Sort files by originalname to maintain consistent order
+      files.sort((a, b) => a.originalname.localeCompare(b.originalname))
+      allFiles = [...files]
+    }
+    
+    // Add existing screenshots
+    if (screenshotIds && screenshotIds.length > 0) {
+      console.log('Loading existing screenshots:', screenshotIds)
+      
+      // Load screenshot data from database
+      const placeholders = screenshotIds.map(() => '?').join(',')
+      const screenshotsSql = `SELECT * FROM screenshots WHERE id IN (${placeholders}) ORDER BY order_index ASC, created_at ASC`
+      
+      const existingScreenshots = await new Promise((resolve, reject) => {
+        db.all(screenshotsSql, screenshotIds, (err, rows) => {
+          if (err) reject(err)
+          else resolve(rows)
+        })
+      })
+      
+      console.log(`Found ${existingScreenshots.length} existing screenshots`)
+      
+      // Convert existing screenshots to file-like objects
+      for (const screenshot of existingScreenshots) {
+        try {
+          const filePath = path.join(process.cwd(), screenshot.file_path)
+          if (fs.existsSync(filePath)) {
+            const fileBuffer = fs.readFileSync(filePath)
+            allFiles.push({
+              originalname: screenshot.custom_name || screenshot.original_name,
+              buffer: fileBuffer,
+              isExisting: true,
+              screenshotId: screenshot.id
+            })
+            console.log(`Loaded existing screenshot: ${screenshot.custom_name || screenshot.original_name}`)
+          } else {
+            console.warn(`Screenshot file not found: ${filePath}`)
+          }
+        } catch (error) {
+          console.error(`Error loading screenshot ${screenshot.id}:`, error)
+        }
+      }
+    }
 
     // Process each image with OCR
-    console.log('Starting OCR processing for all images...')
+    console.log(`Starting OCR processing for ${allFiles.length} images...`)
     const ocrResults = []
     const screenshotPaths = []
     
-    for (let file of files) {
+    for (let file of allFiles) {
       try {
         console.log(`Processing OCR for: ${file.originalname}`)
         
