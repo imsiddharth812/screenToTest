@@ -87,7 +87,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
   }>({ isOpen: false, message: '', type: 'info' })
   
   const [isSaving, setIsSaving] = useState(false)
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
   
   // Success message state for test case generation
   const [successMessage, setSuccessMessage] = useState<{
@@ -152,7 +151,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       edge_cases: scenario.edge_cases || '',
       test_environment: scenario.test_environment || ''
     })
-    setLastSaved(null) // Clear save status when switching scenarios
   }, [scenario])
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
@@ -197,12 +195,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       
       if (response.ok) {
         const data = await response.json()
-        console.log('Loaded test cases:', data) // Debug log
         if (data.testCases && data.testCases.length > 0) {
           // Get the latest test case set (first item since they're ordered by updated_at DESC)
           const latestTestCase = data.testCases[0]
-          console.log('Latest test case data:', latestTestCase)
-          console.log('Type of testCases:', typeof latestTestCase.testCases)
           
           // Extract test cases - they might be in different properties
           let actualTestCases = []
@@ -210,26 +205,20 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
           if (Array.isArray(latestTestCase.testCases)) {
             // Direct array
             actualTestCases = latestTestCase.testCases
-            console.log('Found direct array of test cases')
           } else if (latestTestCase.testCases && typeof latestTestCase.testCases === 'object') {
             // Object with nested properties
             if (latestTestCase.testCases.allTestCases) {
               actualTestCases = latestTestCase.testCases.allTestCases
-              console.log('Found nested allTestCases')
             } else if (latestTestCase.testCases.testCases) {
               actualTestCases = latestTestCase.testCases.testCases
-              console.log('Found nested testCases')
             } else {
               // Maybe it's an object that itself is the test cases array structure
               actualTestCases = [latestTestCase.testCases]
-              console.log('Treating object as single test case')
             }
           } else if (typeof latestTestCase.testCases === 'string') {
             // JSON string - parse it
-            console.log('Parsing JSON string:', latestTestCase.testCases.substring(0, 100) + '...')
             try {
               const parsed = JSON.parse(latestTestCase.testCases)
-              console.log('Parsed JSON:', parsed)
               
               if (Array.isArray(parsed)) {
                 actualTestCases = parsed
@@ -244,9 +233,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
               console.error('Failed to parse test cases JSON:', e)
             }
           }
-          
-          console.log('Final extracted test cases:', actualTestCases)
-          console.log('Number of test cases found:', actualTestCases.length)
           
           const testCaseData = {
             testCases: actualTestCases, // This will be the actual array
@@ -264,10 +250,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
             // Don't spread latestTestCase to avoid overwriting testCases property
           }
           
-          console.log('Setting test case state with:', testCaseData)
           setTestCases(testCaseData)
-        } else {
-          console.log('No test cases found in response')
         }
       }
     } catch (error) {
@@ -291,7 +274,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
-        setLastSaved(new Date())
         showToast('Configuration saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -515,7 +497,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     }
 
     const newUploadedFiles = imageFiles.map(file => ({
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       file,
       preview: URL.createObjectURL(file),
       originalName: file.name,
@@ -639,7 +621,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       })
       
       if (response.ok) {
-        console.log('Screenshot order saved successfully')
+        // Screenshot order saved successfully
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
         console.error('Failed to persist screenshot order:', errorData)
@@ -687,8 +669,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     if (file.isExisting && file.screenshotId) {
       try {
         const token = localStorage.getItem('authToken')
-        console.log(`Updating screenshot ${file.screenshotId} name to: "${newName}"`)
-        
         const response = await fetch(`http://localhost:3001/api/screenshots/${file.screenshotId}`, {
           method: 'PUT',
           headers: {
@@ -699,7 +679,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         })
         
         if (response.ok) {
-          console.log('Screenshot name updated successfully')
+          // Screenshot name updated successfully
         } else {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
           console.error('Failed to update screenshot name:', errorData)
@@ -824,6 +804,8 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         allTestCases: testCases.testCases, // Results page expects this property name
         scenarioId: scenario.id,
         scenarioName: scenario.name,
+        projectName: project?.name,
+        featureName: feature?.name,
         // Get screenshot information if available
         screenshots: files.length > 0 ? files.map(file => ({
           id: file.id,
@@ -837,7 +819,6 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         })) : []
       }
       
-      console.log('Sending to Results page:', testCaseData)
       localStorage.setItem("testCases", JSON.stringify(testCaseData))
       window.open('/results', '_blank')
     }
@@ -1548,6 +1529,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                                   {testCase.priority}
                                 </span>
                               )}
+                              {testCase.type && (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                  {testCase.type}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-500">Click to {isExpanded ? 'collapse' : 'expand'}</span>
@@ -1568,88 +1554,186 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                                 </div>
                               )}
                               
-                              <div className="space-y-4">
-                                {/* Test Steps */}
-                                {(() => {
-                                  const steps = testCase.steps || testCase.testSteps || testCase.actions
-                                  if (!steps) return null
-                                  
-                                  let stepsArray = []
-                                  if (Array.isArray(steps)) {
-                                    stepsArray = steps
-                                  } else if (typeof steps === 'string') {
-                                    stepsArray = steps.includes('\n') ? steps.split('\n').filter(s => s.trim()) : [steps]
-                                  } else if (typeof steps === 'object') {
-                                    stepsArray = Object.values(steps).filter(s => s && typeof s === 'string')
-                                  }
-                                  
-                                  if (stepsArray.length === 0) return null
-                                  
-                                  return (
-                                    <div>
-                                      <h5 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
-                                        <span>📋</span>
-                                        Test Steps:
-                                      </h5>
-                                      <div className="bg-white rounded-lg p-3 border">
-                                        <div className="space-y-2 text-sm text-gray-700">
-                                          {stepsArray.map((step: string, stepIndex: number) => {
-                                            const trimmedStep = String(step).trim()
-                                            
-                                            // Check if this is a main step (starts with number) or a sub-item (starts with dash)
-                                            const isMainStep = /^\d+\./.test(trimmedStep) || (!trimmedStep.startsWith('-') && !trimmedStep.startsWith('•'))
-                                            const isSubItem = trimmedStep.startsWith('-') || trimmedStep.startsWith('•')
-                                            
-                                            if (isSubItem) {
-                                              // Sub-item: just show with bullet point, no number
-                                              return (
-                                                <div key={stepIndex} className="flex gap-3 ml-8">
-                                                  <span className="text-gray-400 flex-shrink-0 mt-1">•</span>
-                                                  <span>{trimmedStep.replace(/^[-•]\s*/, '')}</span>
-                                                </div>
-                                              )
-                                            } else {
-                                              // Main step: show with blue number
-                                              // Extract step number if it exists, otherwise use stepIndex
-                                              const stepMatch = trimmedStep.match(/^(\d+)\.(.+)/)
-                                              const stepNumber = stepMatch ? stepMatch[1] : (stepIndex + 1).toString()
-                                              const stepText = stepMatch ? stepMatch[2].trim() : trimmedStep
+                              {/* Enhanced Test Case Layout */}
+                              <div className="space-y-6">
+                                {/* Test Steps and Expected Results - Two Column Layout */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                  {/* Left Column - Test Steps */}
+                                  <div>
+                                  {/* Test Steps */}
+                                  {(() => {
+                                    const steps = testCase.steps || testCase.testSteps || testCase.actions
+                                    if (!steps) return null
+                                    
+                                    let stepsArray = []
+                                    if (Array.isArray(steps)) {
+                                      stepsArray = steps
+                                    } else if (typeof steps === 'string') {
+                                      stepsArray = steps.includes('\n') ? steps.split('\n').filter(s => s.trim()) : [steps]
+                                    } else if (typeof steps === 'object') {
+                                      stepsArray = Object.values(steps).filter(s => s && typeof s === 'string')
+                                    }
+                                    
+                                    if (stepsArray.length === 0) return null
+                                    
+                                    return (
+                                      <div>
+                                        <h5 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                                          <span>📋</span>
+                                          Test Steps
+                                        </h5>
+                                        <div className="bg-white rounded-lg p-4 border border-gray-200">
+                                          <div className="space-y-2 text-sm text-gray-700">
+                                            {stepsArray.map((step: string, stepIndex: number) => {
+                                              const trimmedStep = String(step).trim()
                                               
-                                              return (
-                                                <div key={stepIndex} className="flex gap-3">
-                                                  <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5">
-                                                    {stepNumber}
-                                                  </span>
-                                                  <span>{stepText}</span>
-                                                </div>
-                                              )
-                                            }
-                                          })}
+                                              // Check if this is a sub-item (starts with dash or bullet)
+                                              const isSubItem = trimmedStep.startsWith('-') || trimmedStep.startsWith('•')
+                                              
+                                              if (isSubItem) {
+                                                // Sub-item: just show with bullet point, no number
+                                                return (
+                                                  <div key={stepIndex} className="flex gap-3 ml-8">
+                                                    <span className="text-gray-400 flex-shrink-0 mt-1">•</span>
+                                                    <span>{trimmedStep.replace(/^[-•]\s*/, '')}</span>
+                                                  </div>
+                                                )
+                                              } else {
+                                                // Main step: simple format like in image
+                                                // Extract step number if it exists, otherwise use stepIndex
+                                                const stepMatch = trimmedStep.match(/^(\d+)\.(.+)/)
+                                                const stepNumber = stepMatch ? stepMatch[1] : (stepIndex + 1).toString()
+                                                const stepText = stepMatch ? stepMatch[2].trim() : trimmedStep
+                                                
+                                                return (
+                                                  <div key={stepIndex} className="flex gap-3">
+                                                    <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                                                      {stepNumber}
+                                                    </span>
+                                                    <span>{stepText}</span>
+                                                  </div>
+                                                )
+                                              }
+                                            })}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  )
-                                })()}
-                                
-                                {/* Expected Result */}
+                                    )
+                                  })()}
+                                  </div>
+
+                                  {/* Right Column - Expected Results */}
+                                  <div>
+                                  {/* Expected Results */}
+                                  {(() => {
+                                    const expected = testCase.expectedResult || testCase.expected || testCase.expectedOutcome || testCase.expectedResults
+                                    if (!expected) return null
+                                    
+                                    let expectedItems = []
+                                    if (Array.isArray(expected)) {
+                                      expectedItems = expected
+                                    } else if (typeof expected === 'object') {
+                                      expectedItems = Object.entries(expected).map(([key, value]) => ({ category: key, result: value }))
+                                    } else if (typeof expected === 'string') {
+                                      // Split by line breaks or treat as single item
+                                      if (expected.includes('\n')) {
+                                        expectedItems = expected.split('\n').filter(item => item.trim()).map((item, index) => ({
+                                          category: `Result ${index + 1}`,
+                                          result: item.trim()
+                                        }))
+                                      } else {
+                                        expectedItems = [{ category: 'Expected Result', result: expected }]
+                                      }
+                                    }
+                                    
+                                    return (
+                                      <div>
+                                        <h5 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                                          <span>✅</span>
+                                          Expected Results
+                                        </h5>
+                                        <div className="bg-white rounded-lg p-4 border border-gray-200">
+                                          <div className="space-y-2 text-sm text-gray-700">
+                                            {expectedItems.map((item: any, resultIndex: number) => (
+                                              <div key={resultIndex} className="flex gap-3">
+                                                <span className="bg-green-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                                                  {resultIndex + 1}
+                                                </span>
+                                                <span>
+                                                  {(() => {
+                                                    let text = typeof item.result === 'string' ? item.result : 
+                                                              typeof item === 'string' ? item :
+                                                              typeof item.result === 'object' ? JSON.stringify(item.result, null, 2) :
+                                                              String(item.result || item)
+                                                    // Remove bullet points and clean up text
+                                                    return text.replace(/^[•\-\*]\s*/, '').trim()
+                                                  })()}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
+                                  </div>
+                                </div>
+
+                                {/* Full Width Test Data Section */}
                                 {(() => {
-                                  const expected = testCase.expectedResult || testCase.expected || testCase.expectedOutcome
-                                  if (!expected) return null
+                                  const testData = testCase.testData || testCase.data || testCase.inputData || testCase.inputs
+                                  if (!testData) return null
                                   
-                                  const expectedText = typeof expected === 'string' ? expected : 
-                                                     typeof expected === 'object' ? JSON.stringify(expected, null, 2) :
-                                                     String(expected)
+                                  let dataToShow = []
+                                  if (Array.isArray(testData)) {
+                                    dataToShow = testData
+                                  } else if (typeof testData === 'object') {
+                                    dataToShow = Object.entries(testData).map(([key, value]) => ({ field: key, value }))
+                                  } else if (typeof testData === 'string') {
+                                    // Try to parse as JSON or treat as plain text
+                                    try {
+                                      const parsed = JSON.parse(testData)
+                                      if (typeof parsed === 'object') {
+                                        dataToShow = Object.entries(parsed).map(([key, value]) => ({ field: key, value }))
+                                      } else {
+                                        dataToShow = [{ field: 'Data', value: testData }]
+                                      }
+                                    } catch {
+                                      dataToShow = [{ field: 'Data', value: testData }]
+                                    }
+                                  }
+                                  
+                                  if (dataToShow.length === 0) return null
                                   
                                   return (
-                                    <div>
+                                    <div className="w-full">
                                       <h5 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
-                                        <span>✅</span>
-                                        Expected Result:
+                                        <span>📊</span>
+                                        Test Data
                                       </h5>
-                                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                        <p className="text-sm text-green-800 whitespace-pre-wrap">
-                                          {expectedText}
-                                        </p>
+                                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                        <table className="w-full text-sm">
+                                          <thead className="bg-gray-50">
+                                            <tr>
+                                              <th className="text-left p-3 font-medium text-gray-800">Field</th>
+                                              <th className="text-left p-3 font-medium text-gray-800">Value</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {dataToShow.map((item: any, dataIndex: number) => (
+                                              <tr key={dataIndex} className={dataIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <td className="p-3 font-medium text-gray-700">
+                                                  {item.field || item.name || `Data ${dataIndex + 1}`}
+                                                </td>
+                                                <td className="p-3 text-gray-600">
+                                                  {typeof item.value === 'string' ? item.value : 
+                                                   typeof item.value === 'object' ? JSON.stringify(item.value) : 
+                                                   String(item.value || item)}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
                                       </div>
                                     </div>
                                   )
