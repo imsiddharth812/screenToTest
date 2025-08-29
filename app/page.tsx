@@ -310,23 +310,18 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     // Load existing screenshots for this scenario
     try {
       const token = localStorage.getItem('authToken')
-      console.log(`Fetching screenshots for scenario ${scenario.id}`)
       const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}/screenshots`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       })
       
-      console.log('Response status:', response.status)
-      
       if (response.ok) {
         const data = await response.json()
-        console.log('Loaded screenshots from database:', data.screenshots)
         // Convert database screenshots to UploadedFile format for display
         const existingFiles: UploadedFile[] = data.screenshots.map((screenshot: any) => {
           // Use secure API endpoint instead of direct file access
           const previewUrl = `http://localhost:3001/api/screenshots/${screenshot.id}`
-          console.log(`Screenshot ${screenshot.id}: ${screenshot.original_name} -> ${previewUrl}`)
           return {
             id: screenshot.id.toString(),
             file: null, // Not needed for display
@@ -338,13 +333,9 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           }
         })
         
-        console.log('Converted to files:', existingFiles)
         setFiles(existingFiles)
       } else {
         // Even if API call fails, keep the scenario selected and just clear files
-        console.log('Failed to fetch screenshots, status:', response.status)
-        const errorText = await response.text()
-        console.log('Error response:', errorText)
         setFiles([])
       }
     } catch (error) {
@@ -616,14 +607,11 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         if (response.ok) {
           // Get the created screenshot data from the server response
           const createdScreenshot = await response.json()
-          console.log('Screenshot uploaded to database:', createdScreenshot)
-          
           // Update the local file state with database information
           setFiles(prevFiles => {
             const updatedFiles = [...prevFiles]
             const fileIndex = updatedFiles.findIndex(f => f.id === uploadedFile.id)
             if (fileIndex !== -1) {
-              console.log(`Updating file state: ${uploadedFile.originalName} -> ID ${createdScreenshot.screenshot.id}`)
               // Use secure API endpoint for newly uploaded screenshots
               updatedFiles[fileIndex] = {
                 ...updatedFiles[fileIndex],
@@ -731,7 +719,6 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     // If it's an existing screenshot with database ID, update in database
     if (fileToUpdate.isExisting && fileToUpdate.screenshotId) {
       try {
-        console.log(`Updating screenshot name in database: ${fileToUpdate.screenshotId} -> "${newName}"`)
         const token = localStorage.getItem('authToken')
         const response = await fetch(`http://localhost:3001/api/screenshots/${fileToUpdate.screenshotId}`, {
           method: 'PUT',
@@ -743,7 +730,7 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
         })
         
         if (response.ok) {
-          console.log('Screenshot name updated successfully in database')
+          // Screenshot name updated successfully
         } else {
           console.error('Failed to update screenshot name in database', response.status, response.statusText)
           // UI is already updated, but log the error
@@ -755,12 +742,6 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
     } else if (!fileToUpdate.isExisting) {
       // For newly uploaded files that don't have database ID yet,
       // the name will be saved when the file is uploaded to the database
-      console.log('File name updated for new upload, will be saved on database upload')
-    } else {
-      console.log('Screenshot update skipped - no database ID available', {
-        isExisting: fileToUpdate.isExisting,
-        screenshotId: fileToUpdate.screenshotId
-      })
     }
   }
 
@@ -1593,8 +1574,8 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
 
-  const handleAuthSuccess = (userData: any) => {
-    console.log('Authentication successful:', userData)
+  const handleAuthSuccess = () => {
+    // Authentication successful
     setAuthModalOpen(false)
   }
 
