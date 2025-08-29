@@ -533,8 +533,23 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
           break
         case 'scenario':
           await scenariosApi.delete(deleteModal.item.id)
-          setScenarios(scenarios.filter(s => s.id !== deleteModal.item!.id))
-          if (selectedScenario?.id === deleteModal.item.id) {
+          const scenarioToDelete = deleteModal.item as Scenario
+          
+          // Update the main scenarios state
+          setScenarios(scenarios.filter(s => s.id !== scenarioToDelete.id))
+          
+          // Update the scenariosPerFeature state to immediately reflect the change in the tree
+          setScenariosPerFeature(prev => {
+            const updated = { ...prev }
+            // Find which feature this scenario belongs to and remove it
+            Object.keys(updated).forEach(featureId => {
+              updated[Number(featureId)] = updated[Number(featureId)].filter(s => s.id !== scenarioToDelete.id)
+            })
+            return updated
+          })
+          
+          // Clear selection if the deleted scenario was selected
+          if (selectedScenario?.id === scenarioToDelete.id) {
             setSelectedScenario(null)
           }
           break
@@ -992,20 +1007,23 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
       `}</style>
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <Link href="/" className="text-2xl font-bold text-blue-600">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16 w-full">
+            {/* Logo - Extreme Left */}
+            <div className="flex-shrink-0">
+              <Link href="/" className="text-xl sm:text-2xl font-bold text-blue-600 hover:text-blue-700 transition-colors">
                 🧪 Screen2TestCases
               </Link>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">
-                Welcome, <strong>{user.name}</strong>
+            
+            {/* User Info & Actions - Extreme Right */}
+            <div className="flex items-center space-x-3 sm:space-x-4 flex-shrink-0">
+              <span className="text-xs sm:text-sm text-gray-700">
+                Welcome, <strong className="text-gray-900">{user.name}</strong>
               </span>
               <button
                 onClick={logout}
-                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors"
               >
                 Sign Out
               </button>
@@ -1191,16 +1209,6 @@ function DashboardView({ user, logout }: { user: any, logout: () => void }) {
                                       </div>
                                     </button>
                                     <div className="scenario-actions flex items-center gap-1 opacity-0 transition-opacity flex-shrink-0 ml-auto pr-2">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          toggleScenarioExpansion(scenario)
-                                        }}
-                                        className="text-gray-400 hover:text-blue-600 p-1 flex-shrink-0"
-                                        title="View Test Cases"
-                                      >
-                                        {expandedScenarios.has(scenario.id) ? '📁' : '📋'}
-                                      </button>
                                       <button
                                         onClick={() => openDeleteModal('scenario', scenario)}
                                         className="text-gray-400 hover:text-red-600 p-1 flex-shrink-0"

@@ -3,37 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import SecureImage from './SecureImage'
 import Toast from './Toast'
-
-// Types
-interface Project {
-  id: number
-  name: string
-  description?: string
-}
-
-interface Feature {
-  id: number
-  name: string
-  description?: string
-  project_id: number
-}
-
-interface Scenario {
-  id: number
-  name: string
-  description?: string
-  feature_id: number
-  testing_intent?: string
-  user_story?: string
-  acceptance_criteria?: string
-  business_rules?: string
-  edge_cases?: string
-  test_environment?: string
-  coverage_level?: string
-  test_types?: string[]
-  created_at?: string
-  updated_at?: string
-}
+import { type Scenario, type Feature, type Project } from '../services'
 
 interface UploadedFile {
   id: string
