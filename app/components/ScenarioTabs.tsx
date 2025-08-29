@@ -89,6 +89,19 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
   const [isSaving, setIsSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   
+  // Success message state for test case generation
+  const [successMessage, setSuccessMessage] = useState<{
+    isVisible: boolean
+    message: string
+  }>({ isVisible: false, message: '' })
+  
+  // Screenshot maximize state
+  const [maximizedScreenshot, setMaximizedScreenshot] = useState<{
+    isOpen: boolean
+    file: UploadedFile | null
+    index: number | null
+  }>({ isOpen: false, file: null, index: null })
+  
   // Configuration state
   const [formData, setFormData] = useState({
     name: scenario.name || '',
@@ -110,6 +123,20 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     loadExistingScreenshots()
     loadExistingTestCases()
   }, [scenario.id])
+
+  // ESC key handler for closing maximized screenshot
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && maximizedScreenshot.isOpen) {
+        setMaximizedScreenshot({ isOpen: false, file: null, index: null })
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyPress)
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress)
+    }
+  }, [maximizedScreenshot.isOpen])
 
   // Sync formData with scenario props when scenario changes
   useEffect(() => {
@@ -723,9 +750,17 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
       if (response.ok) {
         const result = await response.json()
+        // Set test cases first
         setTestCases(result)
+        // Reload existing test cases to ensure consistency
+        await loadExistingTestCases()
+        // Switch to test-cases tab
         setActiveTab('test-cases')
-        showToast('Test cases generated successfully!', 'success')
+        // Show more prominent success message instead of toast
+        setSuccessMessage({
+          isVisible: true,
+          message: 'Test cases generated successfully! You can view them below.'
+        })
       } else {
         const errorData = await response.json()
         showToast(errorData.error || 'Failed to generate test cases', 'error')
@@ -846,6 +881,27 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
             )}
           </div>
         </div>
+        
+        {/* Success Message Banner */}
+        {successMessage.isVisible && (
+          <div className="mt-4 bg-green-100 border border-green-400 rounded-lg p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center">
+                ✓
+              </div>
+              <div>
+                <p className="text-green-800 font-medium">Success!</p>
+                <p className="text-green-700 text-sm">{successMessage.message}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSuccessMessage({ isVisible: false, message: '' })}
+              className="text-green-600 hover:text-green-800 p-1"
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tab Navigation */}
@@ -859,7 +915,13 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
           ].map(tab => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key)
+                // Hide success message when user navigates to test-cases tab
+                if (tab.key === 'test-cases' && successMessage.isVisible) {
+                  setSuccessMessage({ isVisible: false, message: '' })
+                }
+              }}
               className={`py-3 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.key
                   ? 'border-blue-500 text-blue-600'
@@ -1184,7 +1246,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
                       {/* Image container */}
                       <div className="relative mx-3 mb-3">
-                        <div className="relative rounded-lg overflow-hidden border border-gray-100">
+                        <div 
+                          className="relative rounded-lg overflow-hidden border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => setMaximizedScreenshot({ isOpen: true, file, index })}
+                          title="Click to maximize (ESC to close)"
+                        >
                           {file.isExisting && file.screenshotId ? (
                             <SecureImage
                               screenshotId={file.screenshotId.toString()}
@@ -1198,6 +1264,12 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                               className="w-full h-40 object-cover transition-transform duration-200 group-hover:scale-105"
                             />
                           )}
+                          {/* Maximize icon overlay */}
+                          <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white rounded p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                            </svg>
+                          </div>
                         </div>
                       </div>
 
@@ -1615,6 +1687,59 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
           </div>
         )}
       </div>
+
+      {/* Maximized Screenshot Modal */}
+      {maximizedScreenshot.isOpen && maximizedScreenshot.file && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center p-4">
+          {/* Close button */}
+          <button
+            onClick={() => setMaximizedScreenshot({ isOpen: false, file: null, index: null })}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Screenshot info */}
+          <div className="absolute top-4 left-4 text-white z-10">
+            <div className="bg-black bg-opacity-50 rounded px-3 py-2">
+              <p className="font-medium">Screenshot {maximizedScreenshot.index !== null ? maximizedScreenshot.index + 1 : ''}</p>
+              <p className="text-sm opacity-75">{maximizedScreenshot.file.customName}</p>
+            </div>
+          </div>
+
+          {/* Maximized image */}
+          <div className="max-w-full max-h-full flex items-center justify-center">
+            {maximizedScreenshot.file.isExisting && maximizedScreenshot.file.screenshotId ? (
+              <SecureImage
+                screenshotId={maximizedScreenshot.file.screenshotId.toString()}
+                alt={`Maximized Screenshot ${maximizedScreenshot.index !== null ? maximizedScreenshot.index + 1 : ''}`}
+                className="max-w-full max-h-full object-contain shadow-2xl"
+              />
+            ) : (
+              <img
+                src={maximizedScreenshot.file.preview}
+                alt={`Maximized Screenshot ${maximizedScreenshot.index !== null ? maximizedScreenshot.index + 1 : ''}`}
+                className="max-w-full max-h-full object-contain shadow-2xl"
+              />
+            )}
+          </div>
+
+          {/* Help text at bottom */}
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-center">
+            <div className="bg-black bg-opacity-50 rounded px-4 py-2">
+              <p className="text-sm">Press <kbd className="bg-gray-700 px-2 py-1 rounded text-xs">ESC</kbd> to close or click outside the image</p>
+            </div>
+          </div>
+
+          {/* Click outside to close */}
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={() => setMaximizedScreenshot({ isOpen: false, file: null, index: null })}
+          />
+        </div>
+      )}
 
       {/* Toast Notification */}
       <Toast
