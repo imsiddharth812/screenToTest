@@ -2109,7 +2109,6 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
             edge_cases: scenario.edge_cases,
             test_environment: scenario.test_environment
           }
-          console.log('Retrieved scenario context:', scenarioContext.testing_intent, scenarioContext.coverage_level)
         }
       } catch (error) {
         console.error('Error retrieving scenario context:', error)

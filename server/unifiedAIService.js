@@ -290,6 +290,7 @@ ${selectedTypes.map(type => `- ${type}`).join('\\n')}
 
     buildContextSections(scenarioContext) {
         let sections = []
+        
 
         if (scenarioContext.user_story) {
             sections.push(`**USER STORY:**
@@ -316,7 +317,9 @@ ${scenarioContext.edge_cases}`)
 ${scenarioContext.test_environment}`)
         }
 
-        return sections.join('\\n\\n')
+        const contextString = sections.join('\\n\\n')
+        
+        return contextString
     }
 
     getEstimatedTestCount(intent, coverage, testTypeCount) {
