@@ -271,8 +271,7 @@ Generate comprehensive test cases covering all aspects of the functionality.`
         const testTypePrompts = {
             'positive': 'Include positive testing scenarios with valid inputs and expected flows',
             'negative': 'Include negative testing scenarios with invalid inputs and error conditions',
-            'edge_cases': 'Include edge case testing with boundary values and unusual scenarios',
-            'security': 'Include basic security testing for input sanitization and validation'
+            'edge_cases': 'Include edge case testing with boundary values and unusual scenarios'
         }
 
         const selectedTypes = testTypes.map(type => testTypePrompts[type]).filter(Boolean)

@@ -28,7 +28,6 @@ interface TestCases {
   functional?: string[];
   endToEnd?: string[];
   integration?: string[];
-  security?: string[];
   performance?: string[];
   edge?: string[];
   negative?: string[];
@@ -79,7 +78,6 @@ function Results() {
           "functional",
           "endToEnd",
           "integration",
-          "security",
           "edge",
           "negative",
           "target",
@@ -294,11 +292,6 @@ function Results() {
           key: "integration",
           label: "Integration",
           count: testCases.integration?.length || 0,
-        },
-        {
-          key: "security",
-          label: "Security",
-          count: testCases.security?.length || 0,
         },
         {
           key: "edge",

@@ -47,8 +47,7 @@ const COVERAGE_LEVELS = [
 const TEST_TYPE_OPTIONS = [
   { value: 'positive', label: 'Positive Testing', description: 'Valid inputs and expected flows' },
   { value: 'negative', label: 'Negative Testing', description: 'Invalid inputs and error conditions' },
-  { value: 'edge_cases', label: 'Edge Cases', description: 'Boundary values and unusual scenarios' },
-  { value: 'security', label: 'Security Testing', description: 'Input sanitization and security validations' }
+  { value: 'edge_cases', label: 'Edge Cases', description: 'Boundary values and unusual scenarios' }
 ]
 
 interface ScenarioModalProps {
