@@ -1150,7 +1150,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                       Flow: {files.length} {files.length === 1 ? 'Step' : 'Steps'}
                     </h3>
                     <div className="text-xs text-gray-500">
-                      💡 Drag screenshots to reorder • Click to edit names
+                      💡 Hover on flow steps to see screenshot details
                     </div>
                   </div>
                   <div className="flex items-center gap-2 overflow-x-auto pb-2">
