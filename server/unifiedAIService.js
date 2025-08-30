@@ -181,7 +181,7 @@ Example response format:
     {
       "type": "Functional",
       "title": "Login form validation with valid credentials",
-      "preconditions": "• Application is accessible\\n• Test user account exists\\n• Network connection is stable",
+      "preconditions": "• Application is accessible\\n• User is logged in to the application",
       "testSteps": "1. Navigate to ${pageNames[0] || 'Page 1'}\\n2. Locate username field\\n3. Enter valid username\\n4. Locate password field\\n5. Enter valid password\\n6. Click login button\\n7. Verify successful login",
       "testData": "• Username: testuser@example.com\\n• Password: SecurePass123",
       "expectedResults": "• User is successfully authenticated\\n• Redirected to dashboard or main application\\n• Success message displayed\\n• User session is established"

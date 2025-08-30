@@ -730,10 +730,14 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
       if (response.ok) {
         const result = await response.json()
-        // Set test cases first
-        setTestCases(result)
-        // Reload existing test cases to ensure consistency
-        await loadExistingTestCases()
+        // Set test cases with the fresh results and add generation timestamp
+        const testCaseData = {
+          ...result,
+          timestamp: new Date().toISOString(),
+          generatedAt: new Date().toISOString(),
+          generationId: Math.random().toString(36).substring(2, 15)
+        }
+        setTestCases(testCaseData)
         // Switch to test-cases tab
         setActiveTab('test-cases')
         // Show more prominent success message instead of toast
@@ -797,15 +801,22 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
   }
 
   const navigateToResults = () => {
-    if (testCases && testCases.testCases) {
+    if (testCases && (testCases.testCases || testCases.allTestCases)) {
       // Format data for Results page - it expects allTestCases, not testCases
+      const actualTestCases = testCases.testCases || testCases.allTestCases
+      
       const testCaseData = {
         ...testCases,
-        allTestCases: testCases.testCases, // Results page expects this property name
+        allTestCases: actualTestCases, // Results page expects this property name
+        testCases: actualTestCases, // Also set this for compatibility
         scenarioId: scenario.id,
         scenarioName: scenario.name,
         projectName: project?.name,
         featureName: feature?.name,
+        // Force fresh timestamp to ensure it's treated as new data
+        timestamp: new Date().toISOString(),
+        generatedAt: new Date().toISOString(),
+        generationId: Math.random().toString(36).substring(2, 15),
         // Get screenshot information if available
         screenshots: files.length > 0 ? files.map(file => ({
           id: file.id,
@@ -819,8 +830,13 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         })) : []
       }
       
-      localStorage.setItem("testCases", JSON.stringify(testCaseData))
-      window.open('/results', '_blank')
+      // Clear any existing cached test cases before setting new ones
+      localStorage.removeItem("testCases")
+      // Small delay to ensure removal is complete
+      setTimeout(() => {
+        localStorage.setItem("testCases", JSON.stringify(testCaseData))
+        window.open('/results', '_blank')
+      }, 100)
     }
   }
 
@@ -914,7 +930,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                 {tab.label}
                 {tab.key === 'test-cases' && testCases && (
                   <span className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">
-                    {testCases.testCases?.length || 0}
+                    {testCases.testCases?.length || testCases.allTestCases?.length || 0}
                   </span>
                 )}
               </span>
@@ -1483,11 +1499,18 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-800">
-                    Test Cases ({testCases.testCases?.length || 0})
+                    Test Cases ({testCases.testCases?.length || testCases.allTestCases?.length || 0})
                   </h3>
                   <div className="flex items-center gap-4">
                     <div className="text-sm text-gray-600">
-                      Generated: {new Date(testCases.timestamp).toLocaleString()}
+                      Generated: {testCases.timestamp ? new Date(testCases.timestamp).toLocaleDateString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                      }) : 'Unknown'}
                     </div>
                     <button
                       onClick={navigateToResults}
@@ -1499,9 +1522,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                   </div>
                 </div>
                 
-                {testCases.testCases && testCases.testCases.length > 0 ? (
-                  <div className="space-y-3">
-                    {testCases.testCases.map((testCase: any, index: number) => {
+                {(() => {
+                  const actualTestCases = testCases.testCases || testCases.allTestCases || []
+                  return actualTestCases.length > 0 ? (
+                    <div className="space-y-3">
+                      {actualTestCases.map((testCase: any, index: number) => {
                       const isExpanded = expandedTestCases.has(index)
                       
                       return (
@@ -1743,15 +1768,16 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                           )}
                         </div>
                       )
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="text-6xl mb-4">📝</div>
-                    <h3 className="text-xl font-medium text-gray-900 mb-2">No Test Cases Generated</h3>
-                    <p className="text-gray-600">Upload screenshots and generate test cases to see them here.</p>
-                  </div>
-                )}
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">📝</div>
+                      <h3 className="text-xl font-medium text-gray-900 mb-2">No Test Cases Generated</h3>
+                      <p className="text-gray-600">Upload screenshots and generate test cases to see them here.</p>
+                    </div>
+                  )
+                })()}
               </div>
             ) : (
               <div className="text-center py-12">

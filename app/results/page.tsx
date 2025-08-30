@@ -96,6 +96,23 @@ function Results() {
     }
   }, []);
 
+  // Add event listener to refresh data when window gets focus (for new tab scenarios)
+  useEffect(() => {
+    const handleFocus = () => {
+      const stored = localStorage.getItem("testCases");
+      if (stored) {
+        const parsedTestCases = JSON.parse(stored);
+        // Only update if we have different data
+        if (JSON.stringify(parsedTestCases) !== JSON.stringify(testCases)) {
+          setTestCases(parsedTestCases);
+        }
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [testCases]);
+
   const refreshScreenshotsFromServer = async (scenarioId: number, currentTestCases: TestCases) => {
     try {
       const token = localStorage.getItem('authToken');
