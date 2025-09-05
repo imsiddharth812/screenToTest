@@ -477,7 +477,7 @@ ${scenarioContext.test_environment}`)
         const response = await this.makeClaudeRequestWithRetry({
             model: 'claude-3-5-sonnet-20241022',
             max_tokens: 8000,
-            temperature: forceRegenerate ? 0.2 : 0.05,
+            temperature: 0.2, // Use consistent higher temperature for better quality and variation
             messages: [
                 {
                     role: 'user',
@@ -507,7 +507,7 @@ ${scenarioContext.test_environment}`)
         const response = await this.makeOpenAIRequestWithRetry({
             model: 'gpt-4o',
             max_tokens: 8000,
-            temperature: forceRegenerate ? 0.2 : 0.05,
+            temperature: 0.2, // Use consistent higher temperature for better quality and variation
             messages: [
                 {
                     role: 'user',

@@ -982,12 +982,43 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       requestFormData.append('testingIntent', formData.testing_intent || 'comprehensive')
       requestFormData.append('aiModel', formData.ai_model || 'claude')
       
-      // Add screenshot IDs for existing files
+      // Add all scenario context parameters for comprehensive test generation
+      if (formData.coverage_level) {
+        requestFormData.append('coverageLevel', formData.coverage_level)
+      }
+      if (formData.test_types && formData.test_types.length > 0) {
+        requestFormData.append('testTypes', JSON.stringify(formData.test_types))
+      }
+      if (formData.user_story) {
+        requestFormData.append('userStory', formData.user_story)
+      }
+      if (formData.acceptance_criteria) {
+        requestFormData.append('acceptanceCriteria', formData.acceptance_criteria)
+      }
+      if (formData.business_rules) {
+        requestFormData.append('businessRules', formData.business_rules)
+      }
+      if (formData.edge_cases) {
+        requestFormData.append('edgeCases', formData.edge_cases)
+      }
+      if (formData.test_environment) {
+        requestFormData.append('testEnvironment', formData.test_environment)
+      }
+      
+      // Add screenshot IDs for existing files and collect page names
+      const pageNames: string[] = []
       files.forEach(file => {
         if (file.screenshotId) {
           requestFormData.append('screenshotIds[]', file.screenshotId.toString())
         }
+        // Collect page names for proper context
+        pageNames.push(file.customName || file.originalName || `Page ${pageNames.length + 1}`)
       })
+      
+      // Add page names to the request (essential for quality test cases)
+      if (pageNames.length > 0) {
+        requestFormData.append('pageNames', JSON.stringify(pageNames))
+      }
 
       const token = localStorage.getItem('authToken')
       const response = await fetch('http://localhost:3001/api/generate-testcases', {

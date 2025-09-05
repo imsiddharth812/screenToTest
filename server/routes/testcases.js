@@ -309,6 +309,47 @@ router.post('/generate-testcases', authenticateToken, aiLimiter, upload.any(), c
     }
   }
   
+  // Override scenario context with request parameters when provided (for initial generation with current form data)
+  if (req.body.testingIntent) {
+    scenarioContext.testing_intent = req.body.testingIntent
+  }
+  if (req.body.coverageLevel) {
+    scenarioContext.coverage_level = req.body.coverageLevel
+  }
+  if (req.body.testTypes) {
+    try {
+      scenarioContext.test_types = typeof req.body.testTypes === 'string' ? JSON.parse(req.body.testTypes) : req.body.testTypes
+    } catch (e) {
+      logger.warn('Failed to parse testTypes from request:', req.body.testTypes)
+    }
+  }
+  if (req.body.userStory) {
+    scenarioContext.user_story = req.body.userStory
+  }
+  if (req.body.acceptanceCriteria) {
+    scenarioContext.acceptance_criteria = req.body.acceptanceCriteria
+  }
+  if (req.body.businessRules) {
+    scenarioContext.business_rules = req.body.businessRules
+  }
+  if (req.body.edgeCases) {
+    scenarioContext.edge_cases = req.body.edgeCases
+  }
+  if (req.body.testEnvironment) {
+    scenarioContext.test_environment = req.body.testEnvironment
+  }
+  
+  logger.info('Scenario context after merging request parameters:', {
+    testing_intent: scenarioContext.testing_intent,
+    coverage_level: scenarioContext.coverage_level,
+    test_types: scenarioContext.test_types,
+    user_story: scenarioContext.user_story ? 'Present' : 'Not set',
+    acceptance_criteria: scenarioContext.acceptance_criteria ? 'Present' : 'Not set',
+    business_rules: scenarioContext.business_rules ? 'Present' : 'Not set',
+    edge_cases: scenarioContext.edge_cases ? 'Present' : 'Not set',
+    test_environment: scenarioContext.test_environment ? 'Present' : 'Not set'
+  })
+  
   // Generate test cases using Unified AI service (combines OCR + Vision)
   try {
     logger.info(`Final AI Model selected: ${aiModel}`)
