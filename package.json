@@ -8,6 +8,7 @@
     "start": "next start",
     "server": "node server/index.js",
     "server:dev": "nodemon server/index.js",
+    "server:new": "node server/app.js",
     "dev:full": "./start-dev.sh",
     "check": "./check-servers.sh",
     "clean": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true && lsof -ti:3001 | xargs kill -9 2>/dev/null || true"
@@ -20,7 +21,11 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^8.1.0",
+    "express-validator": "^7.2.1",
     "form-data": "^4.0.4",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.0-rc.4",
     "next": "14.2.31",
@@ -31,7 +36,8 @@
     "react-dom": "^18.3.1",
     "sqlite3": "^5.1.7",
     "tailwindcss": "^3.4.7",
-    "tesseract.js": "^5.1.0"
+    "tesseract.js": "^5.1.0",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

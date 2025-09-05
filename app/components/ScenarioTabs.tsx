@@ -980,7 +980,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       const requestFormData = new FormData()
       requestFormData.append('scenarioId', scenario.id.toString())
       requestFormData.append('testingIntent', formData.testing_intent || 'comprehensive')
-      requestFormData.append('aiModel', formData.ai_model || 'gpt-4-vision')
+      requestFormData.append('aiModel', formData.ai_model || 'claude')
       
       // Add screenshot IDs for existing files
       files.forEach(file => {
@@ -1003,7 +1003,8 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
           ...result,
           timestamp: new Date().toISOString(),
           generatedAt: new Date().toISOString(),
-          generationId: Math.random().toString(36).substring(2, 15)
+          generationId: Math.random().toString(36).substring(2, 15),
+          aiModel: formData.ai_model || 'claude' // Store AI model for regeneration
         }
         setTestCases(testCaseData)
         // Switch to test-cases tab
@@ -1085,6 +1086,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         timestamp: new Date().toISOString(),
         generatedAt: new Date().toISOString(),
         generationId: Math.random().toString(36).substring(2, 15),
+        aiModel: formData.ai_model || 'claude', // Store AI model for regeneration
         // Get screenshot information if available
         screenshots: files.length > 0 ? files.map(file => ({
           id: file.id,

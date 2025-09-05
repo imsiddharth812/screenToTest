@@ -1,7 +1,24 @@
+// Enhanced server with security improvements
+require('express-async-errors')
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const multer = require('multer')
+
+// Import new security and utility modules
+const { config, validateConfig } = require('./config/config')
+const logger = require('./utils/logger')
+const { securityHeaders, generalLimiter, authLimiter, uploadLimiter, aiLimiter } = require('./middleware/security')
+const { globalErrorHandler, notFound, catchAsync, AppError } = require('./middleware/errorHandler')
+const fileService = require('./services/fileService')
+
+// Validate configuration at startup
+validateConfig()
+
+// Initialize file service
+fileService.initializeDirectories().catch(err => {
+  logger.error('Failed to initialize directories:', err)
+})
 const Tesseract = require('tesseract.js')
 const ExcelJS = require('exceljs')
 const fs = require('fs')
@@ -12,7 +29,14 @@ const sqlite3 = require('sqlite3').verbose()
 const UnifiedAIService = require('./unifiedAIService')
 
 const app = express()
-const PORT = process.env.SERVER_PORT || 3001
+const PORT = config.PORT
+
+// Apply security middleware early
+app.use(securityHeaders)
+app.use(generalLimiter)
+
+// Trust proxy for accurate IP addresses in rate limiting
+app.set('trust proxy', 1)
 
 // Initialize Unified AI Service
 const unifiedAIService = new UnifiedAIService()
@@ -235,19 +259,19 @@ function runMigrations() {
   })
 }
 
-// Initialize SQLite database
-const db = new sqlite3.Database('./database.db', (err) => {
+// Initialize SQLite database with enhanced configuration
+const db = new sqlite3.Database(config.DATABASE_URL, (err) => {
   if (err) {
-    console.error('Error opening database:', err.message)
+    logger.error('Error opening database:', err.message)
   } else {
-    console.log('Connected to SQLite database')
+    logger.info(`Connected to SQLite database at ${config.DATABASE_URL}`)
     
     // Enable foreign keys for cascade deletion
     db.run('PRAGMA foreign_keys = ON', (err) => {
       if (err) {
-        console.error('Error enabling foreign keys:', err.message)
+        logger.error('Error enabling foreign keys:', err.message)
       } else {
-        console.log('Foreign keys enabled for cascade deletion')
+        logger.info('Foreign keys enabled for cascade deletion')
       }
     })
     
@@ -399,8 +423,8 @@ const db = new sqlite3.Database('./database.db', (err) => {
   }
 })
 
-// JWT Secret (in production, this should be in environment variables)
-const JWT_SECRET = process.env.JWT_SECRET || 'screen2testcases_jwt_secret_key'
+// JWT Secret from secure configuration
+const JWT_SECRET = config.JWT_SECRET
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -408,23 +432,53 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1]
 
   if (!token) {
+    logger.warn(`Access attempt without token from IP: ${req.ip}`)
     return res.status(401).json({ error: 'Access token required' })
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      console.log('🔑 JWT verification failed:', err.message)
+      logger.warn(`JWT verification failed for IP ${req.ip}:`, err.message)
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: 'Token has expired. Please log in again.' })
+      }
       return res.status(403).json({ error: 'Invalid or expired token' })
     }
-    console.log('🔑 JWT verified successfully for user:', user)
+    logger.debug(`JWT verified successfully for user: ${user.userId}`)
     req.user = user
     next()
   })
 }
 
-// Middleware
-app.use(cors())
-app.use(express.json())
+// Middleware with enhanced CORS
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}))
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// Root route handler
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Screen2TestCases API',
+    version: '2.0.0-enhanced',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth/*',
+      projects: '/api/projects',
+      features: '/api/features',
+      scenarios: '/api/scenarios',
+      screenshots: '/api/screenshots',
+      testCases: '/api/generate-testcases'
+    },
+    frontend: 'http://localhost:3000',
+    timestamp: new Date().toISOString()
+  })
+})
 
 // Serve static files from screenshots directory
 app.use('/screenshots', express.static(path.join(__dirname, 'screenshots')))
@@ -510,7 +564,16 @@ const screenshotStorage = multer.diskStorage({
 const upload = multer({ 
   storage: multer.memoryStorage(), // Use memory storage for unified analysis to access buffers
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit per file
+    fileSize: config.UPLOAD_MAX_SIZE,
+    files: 25
+  },
+  fileFilter: (req, file, cb) => {
+    // Only allow image files
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true)
+    } else {
+      cb(new AppError('Only image files are allowed', 400), false)
+    }
   }
 })
 
@@ -541,7 +604,8 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     message: 'Server is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    version: '2.0.0-enhanced'
   })
 })
 
@@ -561,8 +625,10 @@ app.post('/api/admin/integrity-check', authenticateToken, (req, res) => {
 
 // Authentication Routes
 
+// Authentication Routes with enhanced security
+
 // Sign up route
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body
 
@@ -578,7 +644,7 @@ app.post('/api/auth/signup', async (req, res) => {
     // Check if user already exists
     db.get('SELECT * FROM users WHERE email = ?', [email], async (err, existingUser) => {
       if (err) {
-        console.error('Database error:', err.message)
+        logger.error('Database error:', err.message)
         return res.status(500).json({ error: 'Database error' })
       }
 
@@ -587,8 +653,8 @@ app.post('/api/auth/signup', async (req, res) => {
       }
 
       try {
-        // Hash password
-        const saltRounds = 10
+        // Hash password with stronger salt
+        const saltRounds = 12
         const hashedPassword = await bcrypt.hash(password, saltRounds)
 
         // Insert new user
@@ -597,7 +663,7 @@ app.post('/api/auth/signup', async (req, res) => {
           [name, email, hashedPassword],
           function(err) {
             if (err) {
-              console.error('Error creating user:', err.message)
+              logger.error('Error creating user:', err.message)
               return res.status(500).json({ error: 'Failed to create user' })
             }
 
@@ -605,7 +671,7 @@ app.post('/api/auth/signup', async (req, res) => {
             const token = jwt.sign(
               { userId: this.lastID, email: email },
               JWT_SECRET,
-              { expiresIn: '24h' }
+              { expiresIn: config.JWT_EXPIRES_IN }
             )
 
             // Return user data (without password) and token
@@ -616,6 +682,8 @@ app.post('/api/auth/signup', async (req, res) => {
               created_at: new Date().toISOString()
             }
 
+            logger.info(`New user registered: ${email} (ID: ${this.lastID})`)
+
             res.status(201).json({
               message: 'User created successfully',
               user: userData,
@@ -624,18 +692,18 @@ app.post('/api/auth/signup', async (req, res) => {
           }
         )
       } catch (error) {
-        console.error('Error hashing password:', error)
+        logger.error('Error hashing password:', error)
         res.status(500).json({ error: 'Server error' })
       }
     })
   } catch (error) {
-    console.error('Signup error:', error)
+    logger.error('Signup error:', error)
     res.status(500).json({ error: 'Server error' })
   }
 })
 
 // Login route
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authLimiter, (req, res) => {
   try {
     const { email, password } = req.body
 
@@ -647,11 +715,12 @@ app.post('/api/auth/login', (req, res) => {
     // Find user by email
     db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
       if (err) {
-        console.error('Database error:', err.message)
+        logger.error('Database error:', err.message)
         return res.status(500).json({ error: 'Database error' })
       }
 
       if (!user) {
+        logger.warn(`Failed login attempt for non-existent email: ${email} from IP: ${req.ip}`)
         return res.status(401).json({ error: 'Invalid email or password' })
       }
 
@@ -660,6 +729,7 @@ app.post('/api/auth/login', (req, res) => {
         const isPasswordValid = await bcrypt.compare(password, user.password)
 
         if (!isPasswordValid) {
+          logger.warn(`Failed login attempt for email: ${email} from IP: ${req.ip}`)
           return res.status(401).json({ error: 'Invalid email or password' })
         }
 
@@ -667,7 +737,7 @@ app.post('/api/auth/login', (req, res) => {
         const token = jwt.sign(
           { userId: user.id, email: user.email },
           JWT_SECRET,
-          { expiresIn: '24h' }
+          { expiresIn: config.JWT_EXPIRES_IN }
         )
 
         // Return user data (without password) and token
@@ -678,18 +748,20 @@ app.post('/api/auth/login', (req, res) => {
           created_at: user.created_at
         }
 
+        logger.info(`User logged in: ${email} (ID: ${user.id})`)
+
         res.json({
           message: 'Login successful',
           user: userData,
           token: token
         })
       } catch (error) {
-        console.error('Error comparing password:', error)
+        logger.error('Error comparing password:', error)
         res.status(500).json({ error: 'Server error' })
       }
     })
   } catch (error) {
-    console.error('Login error:', error)
+    logger.error('Login error:', error)
     res.status(500).json({ error: 'Server error' })
   }
 })
@@ -698,7 +770,7 @@ app.post('/api/auth/login', (req, res) => {
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   db.get('SELECT id, name, email, created_at FROM users WHERE id = ?', [req.user.userId], (err, user) => {
     if (err) {
-      console.error('Database error:', err.message)
+      logger.error('Database error:', err.message)
       return res.status(500).json({ error: 'Database error' })
     }
 
@@ -1940,8 +2012,8 @@ const storeTestCases = (db, scenarioId, testCases, analysisType) => {
   })
 }
 
-// Unified Test Case Generation Endpoint
-app.post('/api/generate-testcases', upload.any(), async (req, res) => {
+// Unified Test Case Generation Endpoint with AI rate limiting
+app.post('/api/generate-testcases', aiLimiter, upload.any(), async (req, res) => {
   try {
     console.log('Processing Unified AI test case generation request...')
     console.log('Request body:', req.body)
@@ -2468,8 +2540,38 @@ setInterval(() => {
   performIntegrityCheck()
 }, INTEGRITY_CHECK_INTERVAL)
 
+// Add error handling middleware
+app.use(notFound)
+app.use(globalErrorHandler)
+
+// Graceful shutdown
+const gracefulShutdown = (signal) => {
+  logger.info(`${signal} received. Shutting down gracefully...`)
+  
+  if (db) {
+    db.close((err) => {
+      if (err) {
+        logger.error('Error closing database:', err)
+      } else {
+        logger.info('Database connection closed')
+      }
+      process.exit(0)
+    })
+  } else {
+    process.exit(0)
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-  console.log(`🔍 Integrity checks will run every 24 hours`)
-  console.log(`📋 Manual integrity check: POST /api/admin/integrity-check`)
+  logger.info(`🚀 Server running on port ${PORT}`)
+  logger.info(`🌍 Environment: ${config.NODE_ENV}`)
+  logger.info(`💾 Database: ${config.DATABASE_URL}`)
+  logger.info(`🔒 Security: Enhanced security measures active`)
+  logger.info(`📋 Monitoring: Comprehensive logging enabled`)
+  logger.info(`🔍 Integrity checks will run every 24 hours`)
+  logger.info(`📋 Manual integrity check: POST /api/admin/integrity-check`)
+  logger.info(`✅ Server ready to accept connections`)
 })

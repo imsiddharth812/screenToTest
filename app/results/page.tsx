@@ -191,29 +191,39 @@ function Results() {
           body: JSON.stringify({ sessionId: testCases._sessionId }),
         });
       } else {
-        // Unified approach - regenerate using scenario and screenshots
+        // Unified approach - regenerate using existing screenshot IDs (more reliable)
         const formData = new FormData();
         
-        // Add screenshots to form data (we'll need to fetch them from the stored paths)
-        for (let i = 0; i < testCases.screenshots!.length; i++) {
-          const screenshot = testCases.screenshots![i];
-          try {
-            const response = await fetch(screenshot.preview);
-            const blob = await response.blob();
-            const file = new File([blob], screenshot.originalName, { type: blob.type });
-            formData.append(`image${String(i).padStart(3, '0')}`, file);
-          } catch (error) {
-            console.error('Failed to fetch screenshot:', screenshot.originalName, error);
-          }
-        }
+        // Use existing screenshot IDs instead of re-uploading files
+        const screenshotIds = testCases.screenshots!.map(s => s.screenshotId).filter(id => id);
+        formData.append('screenshotIds', JSON.stringify(screenshotIds));
         
-        // Add page names and scenario ID
+        // Add page names and scenario ID to preserve context
         const pageNames = testCases.screenshots!.map(s => s.customName);
         formData.append('pageNames', JSON.stringify(pageNames));
         formData.append('scenarioId', testCases.scenarioId!.toString());
         
+        // Preserve AI model setting from the original generation
+        console.log('Available testCases data:', Object.keys(testCases));
+        console.log('testCases.aiModel:', testCases.aiModel);
+        console.log('testCases.scenarioId:', testCases.scenarioId);
+        
+        const aiModel = testCases.aiModel || 'claude';
+        formData.append('aiModel', aiModel);
+        console.log('Using AI model for regeneration:', aiModel);
+        
+        // Note: The backend will use the scenario's saved AI model if none is provided
+        
+        // Add authentication token for secure access
+        const token = localStorage.getItem('authToken');
+        const headers: HeadersInit = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+        
         response = await fetch("http://localhost:3001/api/generate-testcases", {
           method: "POST",
+          headers,
           body: formData,
         });
       }
@@ -337,65 +347,6 @@ function Results() {
           </div>
         </div>
 
-        {/* Screenshots Section */}
-        {testCases?.screenshots && testCases.screenshots.length > 0 && (
-          <div className="bg-white rounded-lg shadow mb-6">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Screenshots Used ({testCases.screenshots.length})
-              </h2>
-              <p className="text-sm text-gray-600 mt-1">
-                {testCases.projectName} → {testCases.featureName} → {testCases.scenarioName}
-              </p>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                {testCases.screenshots.map((screenshot, index) => (
-                  <div key={screenshot.id} className="bg-gray-50 rounded-lg overflow-hidden">
-                    <div className="aspect-square relative">
-                      <img
-                        src={screenshot.preview}
-                        alt={screenshot.customName}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // If image fails to load, try different URL formats
-                          const target = e.target as HTMLImageElement;
-                          const currentSrc = target.src;
-                          
-                          if (currentSrc.startsWith('blob:')) {
-                            // For blob URLs, we can't recover - these are temporary
-                            console.warn('Blob URL expired for screenshot:', screenshot.customName);
-                            return;
-                          }
-                          
-                          // Try to construct proper server URL if it's not already correct
-                          if (!currentSrc.includes('/screenshots/')) {
-                            // If screenshot has preview URL, use that, otherwise construct from screenshotId
-                            if (screenshot.screenshotId) {
-                              // Use the preview URL which should have the correct file path
-                              target.src = screenshot.preview;
-                            }
-                          }
-                        }}
-                      />
-                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs px-2 py-1 rounded">
-                        {index + 1}
-                      </div>
-                    </div>
-                    <div className="p-2">
-                      <p className="text-xs font-medium text-gray-900 truncate" title={screenshot.customName}>
-                        {screenshot.customName}
-                      </p>
-                      <p className="text-xs text-gray-500 truncate" title={screenshot.originalName}>
-                        {screenshot.originalName}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="bg-white rounded-lg shadow">
           <div className="border-b border-gray-200">

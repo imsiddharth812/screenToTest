@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:3001/api'
+import { API_BASE_URL } from '../config/api'
+
+const API_BASE_PATH = `${API_BASE_URL}/api`
 
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
@@ -32,7 +34,7 @@ const createMultipartHeaders = () => {
 }
 
 export const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
-  const url = `${API_BASE_URL}${endpoint}`
+  const url = `${API_BASE_PATH}${endpoint}`
   
   const config: RequestInit = {
     ...options,
@@ -53,7 +55,7 @@ export const apiRequest = async (endpoint: string, options: RequestInit = {}) =>
 }
 
 export const apiUpload = async (endpoint: string, formData: FormData) => {
-  const url = `${API_BASE_URL}${endpoint}`
+  const url = `${API_BASE_PATH}${endpoint}`
   
   const config: RequestInit = {
     method: 'POST',

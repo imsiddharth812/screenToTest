@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { buildApiUrl, API_ENDPOINTS } from '../config/api'
 
 interface User {
   id: number
@@ -72,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [])
 
   const login = async (email: string, password: string): Promise<void> => {
-    const response = await fetch('http://localhost:3001/api/auth/login', {
+    const response = await fetch(buildApiUrl(API_ENDPOINTS.LOGIN), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -92,7 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const signup = async (name: string, email: string, password: string): Promise<void> => {
-    const response = await fetch('http://localhost:3001/api/auth/signup', {
+    const response = await fetch(buildApiUrl(API_ENDPOINTS.SIGNUP), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
