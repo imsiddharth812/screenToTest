@@ -167,3 +167,7 @@ docs/_build/
 
 #Claude Files
 CLAUDE.md
+
+#Agent Files
+agents.md
+WARP.md

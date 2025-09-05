@@ -1,4 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk')
+const OpenAI = require('openai')
 const fs = require('fs')
 const path = require('path')
 
@@ -7,54 +8,36 @@ class UnifiedAIService {
         this.anthropic = new Anthropic({
             apiKey: process.env.ANTHROPIC_API_KEY,
         })
+        this.openai = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
+        })
         this.testCaseCache = new Map()
     }
 
-    async generateTestCases(screenshotPaths, ocrResults = [], pageNames = [], forceRegenerate = false, scenarioContext = {}) {
+    async generateTestCases(screenshotPaths, ocrResults = [], pageNames = [], forceRegenerate = false, scenarioContext = {}, aiModel = 'claude') {
         try {
-            // Create cache key
-            const cacheKey = this.createCacheKey(screenshotPaths, ocrResults, pageNames)
+            // Create cache key with model info
+            const cacheKey = this.createCacheKey(screenshotPaths, ocrResults, pageNames, aiModel)
             
             // Check cache for consistent results (unless forced regeneration)
             if (!forceRegenerate && this.testCaseCache.has(cacheKey)) {
-                console.log('Returning cached unified AI test cases')
+                console.log(`Returning cached ${aiModel} test cases`)
                 return this.testCaseCache.get(cacheKey)
             }
 
-            // Prepare images for analysis
-            const imageMessages = await this.prepareImageMessages(screenshotPaths, pageNames)
-            
-            const prompt = this.buildUnifiedPrompt(ocrResults, pageNames, screenshotPaths.length, scenarioContext)
-
-            console.log('Sending request to Claude for Unified AI Analysis...')
-            const response = await this.makeRequestWithRetry({
-                model: 'claude-3-5-sonnet-20241022',
-                max_tokens: 8000,
-                temperature: forceRegenerate ? 0.2 : 0.05,
-                messages: [
-                    {
-                        role: 'user',
-                        content: [
-                            {
-                                type: 'text',
-                                text: prompt
-                            },
-                            ...imageMessages
-                        ]
-                    }
-                ]
-            })
-
-            const content = response.content[0].text
-            console.log('Received response from Claude for Unified AI Analysis')
-            const testCases = this.parseTestCases(content)
+            let testCases
+            if (aiModel === 'gpt-4-vision') {
+                testCases = await this.generateTestCasesWithOpenAI(screenshotPaths, ocrResults, pageNames, scenarioContext, forceRegenerate)
+            } else {
+                testCases = await this.generateTestCasesWithClaude(screenshotPaths, ocrResults, pageNames, scenarioContext, forceRegenerate)
+            }
             
             // Cache the result
             this.testCaseCache.set(cacheKey, testCases)
             
             return testCases
         } catch (error) {
-            console.error('Unified AI Service Error:', error)
+            console.error(`Unified AI Service Error (${aiModel}):`, error)
             throw error
         }
     }
@@ -484,30 +467,158 @@ ${scenarioContext.test_environment}`)
         return bestMatch
     }
 
-    createCacheKey(screenshotPaths, ocrResults, pageNames) {
+    async generateTestCasesWithClaude(screenshotPaths, ocrResults, pageNames, scenarioContext, forceRegenerate) {
+        // Prepare images for analysis
+        const imageMessages = await this.prepareImageMessages(screenshotPaths, pageNames)
+        
+        const prompt = this.buildUnifiedPrompt(ocrResults, pageNames, screenshotPaths.length, scenarioContext)
+
+        console.log('Sending request to Claude for Unified AI Analysis...')
+        const response = await this.makeClaudeRequestWithRetry({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 8000,
+            temperature: forceRegenerate ? 0.2 : 0.05,
+            messages: [
+                {
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'text',
+                            text: prompt
+                        },
+                        ...imageMessages
+                    ]
+                }
+            ]
+        })
+
+        const content = response.content[0].text
+        console.log('Received response from Claude for Unified AI Analysis')
+        return this.parseTestCases(content)
+    }
+
+    async generateTestCasesWithOpenAI(screenshotPaths, ocrResults, pageNames, scenarioContext, forceRegenerate) {
+        // Prepare images for OpenAI analysis
+        const imageMessages = await this.prepareOpenAIImageMessages(screenshotPaths, pageNames)
+        
+        const prompt = this.buildUnifiedPrompt(ocrResults, pageNames, screenshotPaths.length, scenarioContext)
+
+        console.log('Sending request to OpenAI for Unified AI Analysis...')
+        const response = await this.makeOpenAIRequestWithRetry({
+            model: 'gpt-4o',
+            max_tokens: 8000,
+            temperature: forceRegenerate ? 0.2 : 0.05,
+            messages: [
+                {
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'text',
+                            text: prompt
+                        },
+                        ...imageMessages
+                    ]
+                }
+            ]
+        })
+
+        const content = response.choices[0].message.content
+        console.log('Received response from OpenAI for Unified AI Analysis')
+        return this.parseTestCases(content)
+    }
+
+    async prepareOpenAIImageMessages(screenshotPaths, pageNames) {
+        const imageMessages = []
+        
+        for (let i = 0; i < screenshotPaths.length; i++) {
+            const screenshotPath = screenshotPaths[i]
+            const pageName = pageNames[i] || `Page ${i + 1}`
+            
+            try {
+                // Read image file
+                const imageBuffer = fs.readFileSync(screenshotPath)
+                const base64Image = imageBuffer.toString('base64')
+                
+                // Determine image type
+                const ext = path.extname(screenshotPath).toLowerCase()
+                const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg'
+                
+                imageMessages.push({
+                    type: 'text',
+                    text: `\n--- ${pageName} (Screenshot ${i + 1}) ---`
+                })
+                
+                imageMessages.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: `data:${mimeType};base64,${base64Image}`,
+                        detail: 'high'
+                    }
+                })
+            } catch (error) {
+                console.error(`Error reading screenshot ${screenshotPath}:`, error)
+                imageMessages.push({
+                    type: 'text',
+                    text: `\n--- ${pageName} (Screenshot ${i + 1}) - IMAGE READ ERROR ---`
+                })
+            }
+        }
+        
+        return imageMessages
+    }
+
+    createCacheKey(screenshotPaths, ocrResults, pageNames, aiModel = 'claude') {
         const crypto = require('crypto')
         const content = JSON.stringify({ 
             paths: screenshotPaths.map(p => path.basename(p)),
             ocr: ocrResults,
-            pageNames 
+            pageNames,
+            model: aiModel
         })
         return crypto.createHash('md5').update(content).digest('hex')
     }
 
-    async makeRequestWithRetry(requestParams, maxRetries = 3) {
+    async makeClaudeRequestWithRetry(requestParams, maxRetries = 3) {
         let lastError
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`Unified AI attempt ${attempt}/${maxRetries}`)
+                console.log(`Claude attempt ${attempt}/${maxRetries}`)
                 const response = await this.anthropic.messages.create(requestParams)
-                console.log('Unified AI request successful')
+                console.log('Claude request successful')
                 return response
             } catch (error) {
                 lastError = error
-                console.log(`Unified AI attempt ${attempt} failed:`, error.status, error.message)
+                console.log(`Claude attempt ${attempt} failed:`, error.status, error.message)
                 
                 if (error.status === 529 && attempt < maxRetries) {
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000)
+                    console.log(`Waiting ${delay}ms before retry...`)
+                    await new Promise(resolve => setTimeout(resolve, delay))
+                    continue
+                }
+                
+                throw error
+            }
+        }
+        
+        throw lastError
+    }
+
+    async makeOpenAIRequestWithRetry(requestParams, maxRetries = 3) {
+        let lastError
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`OpenAI attempt ${attempt}/${maxRetries}`)
+                const response = await this.openai.chat.completions.create(requestParams)
+                console.log('OpenAI request successful')
+                return response
+            } catch (error) {
+                lastError = error
+                console.log(`OpenAI attempt ${attempt} failed:`, error.status || error.code, error.message)
+                
+                if ((error.status === 429 || error.code === 'rate_limit_exceeded') && attempt < maxRetries) {
                     const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000)
                     console.log(`Waiting ${delay}ms before retry...`)
                     await new Promise(resolve => setTimeout(resolve, delay))

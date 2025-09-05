@@ -6,6 +6,7 @@ export interface Scenario {
   name: string
   description?: string
   testing_intent?: string
+  ai_model?: string
   user_story?: string
   acceptance_criteria?: string
   business_rules?: string
@@ -22,6 +23,7 @@ export interface CreateScenarioData {
   name: string
   description?: string
   testing_intent?: string
+  ai_model?: string
   user_story?: string
   acceptance_criteria?: string
   business_rules?: string
@@ -35,6 +37,7 @@ export interface UpdateScenarioData {
   name: string
   description?: string
   testing_intent?: string
+  ai_model?: string
   user_story?: string
   acceptance_criteria?: string
   business_rules?: string

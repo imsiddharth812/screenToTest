@@ -107,12 +107,109 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     testing_intent: scenario.testing_intent || 'comprehensive',
     coverage_level: scenario.coverage_level || 'comprehensive',
     test_types: scenario.test_types || ['positive', 'negative', 'edge_cases'],
+    ai_model: scenario.ai_model || 'gpt-4-vision',
     user_story: scenario.user_story || '',
     acceptance_criteria: scenario.acceptance_criteria || '',
     business_rules: scenario.business_rules || '',
     edge_cases: scenario.edge_cases || '',
     test_environment: scenario.test_environment || ''
   })
+
+  // Original/saved data for change detection
+  const [originalFormData, setOriginalFormData] = useState({
+    name: scenario.name || '',
+    description: scenario.description || '',
+    testing_intent: scenario.testing_intent || 'comprehensive',
+    coverage_level: scenario.coverage_level || 'comprehensive',
+    test_types: scenario.test_types || ['positive', 'negative', 'edge_cases'],
+    ai_model: scenario.ai_model || 'gpt-4-vision',
+    user_story: scenario.user_story || '',
+    acceptance_criteria: scenario.acceptance_criteria || '',
+    business_rules: scenario.business_rules || '',
+    edge_cases: scenario.edge_cases || '',
+    test_environment: scenario.test_environment || ''
+  })
+
+  // Change detection state
+  const [unsavedChanges, setUnsavedChanges] = useState({
+    configuration: false,
+    screenshots: false,
+    context: false
+  })
+
+  // Warning modal state
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false)
+  const [pendingTabSwitch, setPendingTabSwitch] = useState<string | null>(null)
+  
+  // Track if changes were recently saved (not discarded)
+  const [recentlySaved, setRecentlySaved] = useState(false)
+  
+
+  // Change detection utility functions
+  const areArraysEqual = (arr1: string[], arr2: string[]): boolean => {
+    if (arr1.length !== arr2.length) return false
+    return arr1.every((item, index) => item === arr2[index])
+  }
+
+  const hasConfigurationChanges = (): boolean => {
+    return (
+      formData.name !== originalFormData.name ||
+      formData.description !== originalFormData.description ||
+      formData.testing_intent !== originalFormData.testing_intent ||
+      formData.coverage_level !== originalFormData.coverage_level ||
+      !areArraysEqual(formData.test_types, originalFormData.test_types) ||
+      formData.ai_model !== originalFormData.ai_model
+    )
+  }
+
+  const hasContextChanges = (): boolean => {
+    return (
+      formData.user_story !== originalFormData.user_story ||
+      formData.acceptance_criteria !== originalFormData.acceptance_criteria ||
+      formData.business_rules !== originalFormData.business_rules ||
+      formData.edge_cases !== originalFormData.edge_cases ||
+      formData.test_environment !== originalFormData.test_environment
+    )
+  }
+
+  const hasAnyUnsavedChanges = (): boolean => {
+    return hasConfigurationChanges() || hasContextChanges()
+  }
+
+  // Field-level change detection
+  const isFieldChanged = (field: keyof typeof formData): boolean => {
+    if (Array.isArray(formData[field]) && Array.isArray(originalFormData[field])) {
+      return !areArraysEqual(formData[field] as string[], originalFormData[field] as string[])
+    }
+    return formData[field] !== originalFormData[field]
+  }
+
+  // Update unsaved changes state whenever formData changes
+  useEffect(() => {
+    const hasChanges = hasConfigurationChanges() || hasContextChanges()
+    
+    setUnsavedChanges({
+      configuration: hasConfigurationChanges(),
+      screenshots: false, // Screenshots auto-save, so no unsaved changes
+      context: hasContextChanges()
+    })
+    
+    // Reset recentlySaved when new changes are made
+    if (hasChanges) {
+      setRecentlySaved(false)
+    }
+  }, [formData, originalFormData])
+  
+  // Auto-hide "All changes saved" message after 5 seconds
+  useEffect(() => {
+    if (recentlySaved) {
+      const timeout = setTimeout(() => {
+        setRecentlySaved(false)
+      }, 5000) // Hide after 5 seconds
+      
+      return () => clearTimeout(timeout)
+    }
+  }, [recentlySaved])
 
   // Remove auto-save functionality - only save when user clicks Save button
 
@@ -122,11 +219,42 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     loadExistingTestCases()
   }, [scenario.id])
 
-  // ESC key handler for closing maximized screenshot
+  // Keyboard shortcuts handler
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // ESC key for closing maximized screenshot
       if (event.key === 'Escape' && maximizedScreenshot.isOpen) {
         setMaximizedScreenshot({ isOpen: false, file: null, index: null })
+        return
+      }
+      
+      // Ctrl+S / Cmd+S for saving
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault()
+        
+        if (activeTab === 'configuration') {
+          handleSaveConfiguration()
+        } else if (activeTab === 'context') {
+          // Save based on the active context tab
+          switch (activeContextTab) {
+            case 'user_story':
+              handleSaveUserStory()
+              break
+            case 'acceptance_criteria':
+              handleSaveAcceptanceCriteria()
+              break
+            case 'business_rules':
+              handleSaveBusinessRules()
+              break
+            case 'edge_cases':
+              handleSaveEdgeCases()
+              break
+            case 'environment':
+              handleSaveTestEnvironment()
+              break
+          }
+        }
+        return
       }
     }
 
@@ -134,22 +262,41 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
     return () => {
       document.removeEventListener('keydown', handleKeyPress)
     }
-  }, [maximizedScreenshot.isOpen])
+  }, [maximizedScreenshot.isOpen, activeTab, activeContextTab, hasAnyUnsavedChanges()])
+
+  // Browser beforeunload protection for unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasAnyUnsavedChanges()) {
+        e.preventDefault()
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
+        return 'You have unsaved changes. Are you sure you want to leave?'
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [hasAnyUnsavedChanges()])
 
   // Sync formData with scenario props when scenario changes
   useEffect(() => {
-    setFormData({
+    const newData = {
       name: scenario.name || '',
       description: scenario.description || '',
       testing_intent: scenario.testing_intent || 'comprehensive',
       coverage_level: scenario.coverage_level || 'comprehensive',
       test_types: scenario.test_types || ['positive', 'negative', 'edge_cases'],
+      ai_model: scenario.ai_model || 'gpt-4-vision',
       user_story: scenario.user_story || '',
       acceptance_criteria: scenario.acceptance_criteria || '',
       business_rules: scenario.business_rules || '',
       edge_cases: scenario.edge_cases || '',
       test_environment: scenario.test_environment || ''
-    })
+    }
+    setFormData(newData)
+    setOriginalFormData(newData) // Also update original data when scenario changes
   }, [scenario])
 
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
@@ -273,6 +420,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
+        // Update original data to reflect saved state
+        setOriginalFormData(prev => ({ ...prev, ...formData }))
+        setRecentlySaved(true)
         showToast('Configuration saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -314,6 +464,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
+        // Update original data to reflect saved state
+        setOriginalFormData(prev => ({ ...prev, user_story: formData.user_story }))
+        setRecentlySaved(true)
         showToast('User Story saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -354,6 +507,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
+        // Update original data to reflect saved state
+        setOriginalFormData(prev => ({ ...prev, acceptance_criteria: formData.acceptance_criteria }))
+        setRecentlySaved(true)
         showToast('Acceptance Criteria saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -394,6 +550,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
+        // Update original data to reflect saved state
+        setOriginalFormData(prev => ({ ...prev, business_rules: formData.business_rules }))
+        setRecentlySaved(true)
         showToast('Business Rules saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -434,6 +593,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
+        // Update original data to reflect saved state
+        setOriginalFormData(prev => ({ ...prev, edge_cases: formData.edge_cases }))
+        setRecentlySaved(true)
         showToast('Edge Cases saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -474,6 +636,9 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       if (response.ok) {
         const updatedScenario = await response.json()
         onScenarioUpdate(updatedScenario.scenario)
+        // Update original data to reflect saved state
+        setOriginalFormData(prev => ({ ...prev, test_environment: formData.test_environment }))
+        setRecentlySaved(true)
         showToast('Test Environment saved successfully!', 'success')
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
@@ -486,6 +651,109 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       setIsSaving(false)
     }
   }
+
+  // Handle tab switching with unsaved changes protection
+  const handleTabSwitch = (newTab: string) => {
+    // Allow switching to same tab
+    if (newTab === activeTab) return
+    
+    // If switching away from configuration or context tabs with unsaved changes
+    if (hasAnyUnsavedChanges() && (activeTab === 'configuration' || activeTab === 'context')) {
+      setPendingTabSwitch(newTab)
+      setShowUnsavedWarning(true)
+      return
+    }
+    
+    // Normal tab switch
+    setActiveTab(newTab)
+    // Hide success message when user navigates to test-cases tab
+    if (newTab === 'test-cases' && successMessage.isVisible) {
+      setSuccessMessage({ isVisible: false, message: '' })
+    }
+  }
+
+  // Handle unsaved warning modal actions
+  const handleSaveAndSwitch = async () => {
+    if (pendingTabSwitch) {
+      // Save based on current tab and what has changes
+      if (activeTab === 'configuration' && hasConfigurationChanges()) {
+        await handleSaveConfiguration()
+      } else if (activeTab === 'context' && hasContextChanges()) {
+        // Save all context fields at once
+        setIsSaving(true)
+        try {
+          const token = localStorage.getItem('authToken')
+          const response = await fetch(`http://localhost:3001/api/scenarios/${scenario.id}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              name: formData.name,
+              description: scenario.description,
+              testing_intent: scenario.testing_intent,
+              coverage_level: scenario.coverage_level,
+              test_types: scenario.test_types,
+              ai_model: scenario.ai_model,
+              user_story: formData.user_story,
+              acceptance_criteria: formData.acceptance_criteria,
+              business_rules: formData.business_rules,
+              edge_cases: formData.edge_cases,
+              test_environment: formData.test_environment
+            })
+          })
+          
+          if (response.ok) {
+            const updatedScenario = await response.json()
+            onScenarioUpdate(updatedScenario.scenario)
+            // Update original data to reflect saved state
+            setOriginalFormData({ ...formData })
+            setRecentlySaved(true)
+            showToast('Context & Requirements saved successfully!', 'success')
+          } else {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }))
+            showToast(`Failed to save: ${errorData.error}`, 'error')
+            return
+          }
+        } catch (error) {
+          console.error('Error saving:', error)
+          showToast('Error saving. Please try again.', 'error')
+          return
+        } finally {
+          setIsSaving(false)
+        }
+      }
+      
+      setActiveTab(pendingTabSwitch)
+      if (pendingTabSwitch === 'test-cases' && successMessage.isVisible) {
+        setSuccessMessage({ isVisible: false, message: '' })
+      }
+    }
+    setShowUnsavedWarning(false)
+    setPendingTabSwitch(null)
+  }
+
+  const handleDiscardAndSwitch = () => {
+    if (pendingTabSwitch) {
+      // Revert to original data
+      setFormData({ ...originalFormData })
+      // Explicitly set recentlySaved to false since we're discarding, not saving
+      setRecentlySaved(false)
+      setActiveTab(pendingTabSwitch)
+      if (pendingTabSwitch === 'test-cases' && successMessage.isVisible) {
+        setSuccessMessage({ isVisible: false, message: '' })
+      }
+    }
+    setShowUnsavedWarning(false)
+    setPendingTabSwitch(null)
+  }
+
+  const handleCancelSwitch = () => {
+    setShowUnsavedWarning(false)
+    setPendingTabSwitch(null)
+  }
+
 
   const handleFiles = useCallback(async (newFiles: File[]) => {
     const imageFiles = newFiles.filter(file => file.type.startsWith('image/'))
@@ -712,6 +980,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       const requestFormData = new FormData()
       requestFormData.append('scenarioId', scenario.id.toString())
       requestFormData.append('testingIntent', formData.testing_intent || 'comprehensive')
+      requestFormData.append('aiModel', formData.ai_model || 'gpt-4-vision')
       
       // Add screenshot IDs for existing files
       files.forEach(file => {
@@ -854,6 +1123,22 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
             <p className="text-sm text-gray-600">
               {project?.name} → {feature?.name}
             </p>
+            {/* Save Status Indicator */}
+            {hasAnyUnsavedChanges() ? (
+              <div className="flex items-center gap-2 mt-2 text-xs">
+                <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                <span className="text-orange-600 font-medium">
+                  You have unsaved changes - Don't forget to save!
+                </span>
+              </div>
+            ) : recentlySaved ? (
+              <div className="flex items-center gap-2 mt-2 text-xs">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span className="text-green-600 font-medium">
+                  All changes saved ✓
+                </span>
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-600">
@@ -911,13 +1196,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
           ].map(tab => (
             <button
               key={tab.key}
-              onClick={() => {
-                setActiveTab(tab.key)
-                // Hide success message when user navigates to test-cases tab
-                if (tab.key === 'test-cases' && successMessage.isVisible) {
-                  setSuccessMessage({ isVisible: false, message: '' })
-                }
-              }}
+              onClick={() => handleTabSwitch(tab.key)}
               className={`py-3 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.key
                   ? 'border-blue-500 text-blue-600'
@@ -927,6 +1206,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
               <span className="flex items-center gap-2">
                 <span>{tab.icon}</span>
                 {tab.label}
+                {/* Unsaved changes indicator */}
+                {((tab.key === 'configuration' && unsavedChanges.configuration) ||
+                  (tab.key === 'context' && unsavedChanges.context)) && (
+                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse ml-1" title="Unsaved changes"></div>
+                )}
                 {tab.key === 'test-cases' && testCases && (
                   <span className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">
                     {testCases.testCases?.length || testCases.allTestCases?.length || 0}
@@ -939,7 +1223,7 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
       </div>
 
       {/* Tab Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto h-0">
         {/* Configuration Tab */}
         {activeTab === 'configuration' && (
           <div className="p-6 max-w-4xl">
@@ -952,8 +1236,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                 
                 <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       Scenario Name *
+                      {isFieldChanged('name') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <input
                       type="text"
@@ -966,8 +1253,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       Brief Description
+                      {isFieldChanged('description') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <textarea
                       value={formData.description}
@@ -987,8 +1277,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                 </h3>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
                     Primary Testing Intent
+                    {isFieldChanged('testing_intent') && (
+                      <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                    )}
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {TESTING_INTENTS.map((intent) => (
@@ -1017,14 +1310,88 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                   </div>
                 </div>
 
+                {/* AI Model Selection */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    🤖 AI Model Selection
+                  </h3>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      Choose AI Model for Test Generation
+                      {isFieldChanged('ai_model') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="cursor-pointer">
+                        <input
+                          type="radio"
+                          name="aiModel"
+                          value="gpt-4-vision"
+                          checked={formData.ai_model === 'gpt-4-vision'}
+                          onChange={(e) => setFormData(prev => ({ ...prev, ai_model: e.target.value }))}
+                          className="sr-only"
+                        />
+                        <div className={`p-4 rounded-lg border-2 transition-all ${
+                          formData.ai_model === 'gpt-4-vision'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="text-2xl">🧠</div>
+                            <div>
+                              <div className="font-medium text-sm">GPT-4 Vision</div>
+                              <div className="text-xs text-gray-500">OpenAI's advanced vision model</div>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-600">
+                            Excellent at understanding complex UI layouts and generating comprehensive test scenarios
+                          </p>
+                        </div>
+                      </label>
+
+                      <label className="cursor-pointer">
+                        <input
+                          type="radio"
+                          name="aiModel"
+                          value="claude"
+                          checked={formData.ai_model === 'claude'}
+                          onChange={(e) => setFormData(prev => ({ ...prev, ai_model: e.target.value }))}
+                          className="sr-only"
+                        />
+                        <div className={`p-4 rounded-lg border-2 transition-all ${
+                          formData.ai_model === 'claude'
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="text-2xl">🎯</div>
+                            <div>
+                              <div className="font-medium text-sm">Claude</div>
+                              <div className="text-xs text-gray-500">Anthropic's reasoning model</div>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-600">
+                            Strong analytical capabilities for detailed test case generation and edge case identification
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Test Generation Settings */}
                 <div className="bg-gray-50 p-4 rounded-lg space-y-4">
                   <h4 className="font-medium text-gray-800">Test Generation Settings</h4>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                         Coverage Level
+                        {isFieldChanged('coverage_level') && (
+                          <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                        )}
                       </label>
                       <select
                         value={formData.coverage_level}
@@ -1040,8 +1407,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                         Test Types to Include
+                        {isFieldChanged('test_types') && (
+                          <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                        )}
                       </label>
                       <div className="space-y-2">
                         {TEST_TYPE_OPTIONS.map(type => (
@@ -1354,8 +1724,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
               <div className="min-h-[200px]">
                 {activeContextTab === 'user_story' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       User Story (Optional)
+                      {isFieldChanged('user_story') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <textarea
                       value={formData.user_story}
@@ -1381,8 +1754,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
                 {activeContextTab === 'acceptance_criteria' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       Acceptance Criteria (Optional)
+                      {isFieldChanged('acceptance_criteria') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <textarea
                       value={formData.acceptance_criteria}
@@ -1408,8 +1784,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
                 {activeContextTab === 'business_rules' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       Business Rules (Optional)
+                      {isFieldChanged('business_rules') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <textarea
                       value={formData.business_rules}
@@ -1435,8 +1814,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
                 {activeContextTab === 'edge_cases' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       Edge Cases & Special Scenarios (Optional)
+                      {isFieldChanged('edge_cases') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <textarea
                       value={formData.edge_cases}
@@ -1462,8 +1844,11 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
                 {activeContextTab === 'environment' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
                       Test Environment Details (Optional)
+                      {isFieldChanged('test_environment') && (
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" title="Unsaved changes"></span>
+                      )}
                     </label>
                     <textarea
                       value={formData.test_environment}
@@ -1847,6 +2232,59 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
             className="absolute inset-0 -z-10" 
             onClick={() => setMaximizedScreenshot({ isOpen: false, file: null, index: null })}
           />
+        </div>
+      )}
+
+      {/* Unsaved Changes Warning Modal */}
+      {showUnsavedWarning && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-5 rounded-t-xl">
+              <h2 className="text-xl font-bold text-white">
+                Unsaved Changes
+              </h2>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className="text-gray-600 text-center mb-6">
+                You have unsaved changes. What would you like to do?
+              </p>
+
+              {/* Actions */}
+              <div className="space-y-3">
+                <button
+                  onClick={handleSaveAndSwitch}
+                  disabled={isSaving}
+                  className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white px-4 py-3 rounded-lg font-semibold transition-all disabled:cursor-not-allowed"
+                >
+                  {isSaving ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      <span>Saving...</span>
+                    </div>
+                  ) : (
+                    'Save & Continue'
+                  )}
+                </button>
+                
+                <button
+                  onClick={handleDiscardAndSwitch}
+                  className="w-full bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Discard
+                </button>
+                
+                <button
+                  onClick={handleCancelSwitch}
+                  className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

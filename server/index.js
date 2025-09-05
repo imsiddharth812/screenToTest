@@ -196,6 +196,7 @@ function runMigrations() {
       const existingColumns = rows.map(row => row.name)
       const newColumns = [
         { name: 'testing_intent', sql: 'ALTER TABLE scenarios ADD COLUMN testing_intent VARCHAR(50) DEFAULT "comprehensive"' },
+        { name: 'ai_model', sql: 'ALTER TABLE scenarios ADD COLUMN ai_model VARCHAR(20) DEFAULT "claude"' },
         { name: 'user_story', sql: 'ALTER TABLE scenarios ADD COLUMN user_story TEXT' },
         { name: 'acceptance_criteria', sql: 'ALTER TABLE scenarios ADD COLUMN acceptance_criteria TEXT' },
         { name: 'business_rules', sql: 'ALTER TABLE scenarios ADD COLUMN business_rules TEXT' },
@@ -1133,6 +1134,7 @@ app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => 
     name, 
     description, 
     testing_intent = 'comprehensive',
+    ai_model = 'claude',
     user_story,
     acceptance_criteria,
     business_rules,
@@ -1169,15 +1171,16 @@ app.post('/api/features/:featureId/scenarios', authenticateToken, (req, res) => 
     }
     
     const insertSql = `INSERT INTO scenarios 
-      (feature_id, name, description, testing_intent, user_story, acceptance_criteria, 
+      (feature_id, name, description, testing_intent, ai_model, user_story, acceptance_criteria, 
        business_rules, edge_cases, test_environment, coverage_level, test_types) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     
     db.run(insertSql, [
       featureId, 
       name.trim(), 
       description?.trim() || null,
       testing_intent,
+      ai_model,
       user_story?.trim() || null,
       acceptance_criteria?.trim() || null,
       business_rules?.trim() || null,
@@ -1217,6 +1220,7 @@ app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
     name, 
     description, 
     testing_intent,
+    ai_model,
     user_story,
     acceptance_criteria,
     business_rules,
@@ -1254,7 +1258,7 @@ app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
     }
     
     const updateSql = `UPDATE scenarios SET 
-      name = ?, description = ?, testing_intent = ?, user_story = ?, acceptance_criteria = ?,
+      name = ?, description = ?, testing_intent = ?, ai_model = ?, user_story = ?, acceptance_criteria = ?,
       business_rules = ?, edge_cases = ?, test_environment = ?, coverage_level = ?, 
       test_types = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?`
@@ -1263,6 +1267,7 @@ app.put('/api/scenarios/:id', authenticateToken, (req, res) => {
       name.trim(), 
       description?.trim() || null,
       testing_intent,
+      ai_model,
       user_story?.trim() || null,
       acceptance_criteria?.trim() || null,
       business_rules?.trim() || null,
@@ -1960,11 +1965,13 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     console.log(`- Uploaded files: ${files?.length || 0}`)
     console.log(`- Existing screenshots: ${screenshotIds?.length || 0}`)
 
-    // Get page names and scenario ID from request
+    // Get page names, scenario ID, and AI model from request
     const pageNames = req.body.pageNames ? JSON.parse(req.body.pageNames) : []
     const scenarioId = req.body.scenarioId ? parseInt(req.body.scenarioId) : null
+    const aiModel = req.body.aiModel || 'claude'
     console.log('Page names received:', pageNames)
     console.log('Scenario ID received:', scenarioId)
+    console.log('AI Model selected:', aiModel)
 
     // Prepare files array combining uploaded files and existing screenshots
     let allFiles = []
@@ -2118,7 +2125,8 @@ app.post('/api/generate-testcases', upload.any(), async (req, res) => {
     
     try {
       // Generate test cases using Unified AI service (combines OCR + Vision)
-      const testCases = await unifiedAIService.generateTestCases(validScreenshotPaths, validOcrResults, validPageNames, false, scenarioContext)
+      console.log(`Using ${aiModel === 'gpt-4-vision' ? 'OpenAI GPT-4 Vision' : 'Claude Anthropic'} for test generation`)
+      const testCases = await unifiedAIService.generateTestCases(validScreenshotPaths, validOcrResults, validPageNames, false, scenarioContext, aiModel)
       
       if (testCases && testCases.allTestCases && testCases.allTestCases.length > 0) {
         // Store in database with analysis_type as 'unified'
