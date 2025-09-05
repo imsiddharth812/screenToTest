@@ -147,11 +147,18 @@ function Results() {
 
   const downloadXlsx = async () => {
     try {
+      const token = localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+      };
+      
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch("http://localhost:3001/api/download/xlsx", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(testCases),
       });
 
@@ -163,9 +170,15 @@ function Results() {
         a.download = "test-cases.xlsx";
         a.click();
         window.URL.revokeObjectURL(url);
+        console.log('XLSX download initiated successfully');
+      } else {
+        const errorText = await response.text();
+        console.error('XLSX download failed:', response.status, response.statusText, errorText);
+        alert(`Failed to download XLSX file: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error("Download failed:", error);
+      alert('An error occurred while downloading the file. Please try again.');
     }
   };
 
