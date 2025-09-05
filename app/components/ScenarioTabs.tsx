@@ -998,13 +998,39 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
 
       if (response.ok) {
         const result = await response.json()
+        
+        console.log('=== TEST CASE GENERATION DEBUG ===');
+        console.log('Configuration used for generation:');
+        console.log('- AI Model:', formData.ai_model);
+        console.log('- Testing Intent:', formData.testing_intent);
+        console.log('- Coverage Level:', formData.coverage_level);
+        console.log('- Test Types:', formData.test_types);
+        console.log('- User Story:', formData.user_story ? 'Present' : 'Not set');
+        console.log('- Acceptance Criteria:', formData.acceptance_criteria ? 'Present' : 'Not set');
+        console.log('- Business Rules:', formData.business_rules ? 'Present' : 'Not set');
+        console.log('- Edge Cases:', formData.edge_cases ? 'Present' : 'Not set');
+        console.log('- Test Environment:', formData.test_environment ? 'Present' : 'Not set');
+        console.log('- Scenario ID:', scenario.id);
+        console.log('- Screenshot Count:', files.length);
+        console.log('Generated test cases count:', result.testCases?.length || result.allTestCases?.length || 0);
+        console.log('=====================================');
+        
         // Set test cases with the fresh results and add generation timestamp
         const testCaseData = {
           ...result,
           timestamp: new Date().toISOString(),
           generatedAt: new Date().toISOString(),
           generationId: Math.random().toString(36).substring(2, 15),
-          aiModel: formData.ai_model || 'claude' // Store AI model for regeneration
+          // Use configuration from backend response if available, otherwise use form data
+          aiModel: result.configuration?.aiModel || formData.ai_model || 'claude',
+          testingIntent: result.configuration?.testingIntent || formData.testing_intent,
+          coverageLevel: result.configuration?.coverageLevel || formData.coverage_level,
+          testTypes: result.configuration?.testTypes || formData.test_types,
+          userStory: result.configuration?.userStory || formData.user_story,
+          acceptanceCriteria: result.configuration?.acceptanceCriteria || formData.acceptance_criteria,
+          businessRules: result.configuration?.businessRules || formData.business_rules,
+          edgeCases: result.configuration?.edgeCases || formData.edge_cases,
+          testEnvironment: result.configuration?.testEnvironment || formData.test_environment
         }
         setTestCases(testCaseData)
         // Switch to test-cases tab
@@ -1086,7 +1112,16 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
         timestamp: new Date().toISOString(),
         generatedAt: new Date().toISOString(),
         generationId: Math.random().toString(36).substring(2, 15),
-        aiModel: formData.ai_model || 'claude', // Store AI model for regeneration
+        // Include all configuration data for display and regeneration
+        aiModel: formData.ai_model || 'claude',
+        testingIntent: formData.testing_intent,
+        coverageLevel: formData.coverage_level,
+        testTypes: formData.test_types,
+        userStory: formData.user_story,
+        acceptanceCriteria: formData.acceptance_criteria,
+        businessRules: formData.business_rules,
+        edgeCases: formData.edge_cases,
+        testEnvironment: formData.test_environment,
         // Get screenshot information if available
         screenshots: files.length > 0 ? files.map(file => ({
           id: file.id,
@@ -1905,6 +1940,51 @@ export default function ScenarioTabs({ scenario, feature, project, onScenarioUpd
                       <span>📋</span>
                       View All Tests
                     </button>
+                  </div>
+                </div>
+                
+                {/* Configuration Summary */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span>⚙️</span>
+                    <h4 className="font-medium text-blue-900">Generation Configuration</h4>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-blue-800">AI Model:</span>
+                      <div className="text-blue-700">{(() => {
+                        const aiModel = testCases.aiModel || formData.ai_model || 'claude'
+                        return aiModel === 'claude' ? 'Claude (Anthropic)' : 
+                               aiModel === 'gpt-4-vision' ? 'GPT-4 Vision (OpenAI)' : 
+                               aiModel === 'gpt-4o' ? 'GPT-4o (OpenAI)' : aiModel
+                      })()}</div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-800">Focus:</span>
+                      <div className="text-blue-700">{(() => {
+                        const intent = testCases.testingIntent || formData.testing_intent
+                        return intent === 'comprehensive' ? 'Comprehensive' :
+                               intent === 'form-validation' ? 'Form Validation' :
+                               intent === 'user-journey' ? 'User Journey' :
+                               intent === 'integration' ? 'Integration' :
+                               intent === 'business-logic' ? 'Business Logic' : 
+                               intent || 'Default'
+                      })()}</div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-800">Coverage:</span>
+                      <div className="text-blue-700">{(() => {
+                        const coverage = testCases.coverageLevel || formData.coverage_level
+                        return coverage === 'essential' ? 'Essential' :
+                               coverage === 'comprehensive' ? 'Comprehensive' :
+                               coverage === 'exhaustive' ? 'Exhaustive' :
+                               coverage || 'Default'
+                      })()}</div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-800">Screenshots:</span>
+                      <div className="text-blue-700">{files.length} images</div>
+                    </div>
                   </div>
                 </div>
                 

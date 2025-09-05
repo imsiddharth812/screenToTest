@@ -42,12 +42,273 @@ interface TestCases {
   projectName?: string;
   featureName?: string;
   screenshots?: ScreenshotInfo[];
+  // Configuration information
+  aiModel?: string;
+  testingIntent?: string;
+  coverageLevel?: string;
+  testTypes?: string[];
+  userStory?: string;
+  acceptanceCriteria?: string;
+  businessRules?: string;
+  edgeCases?: string;
+  testEnvironment?: string;
+  // Generation metadata
+  timestamp?: string;
+  generatedAt?: string;
+  generationId?: string;
 }
 
 // Helper function to safely convert any value to string and split
 const safeStringSplit = (value: any, delimiter: string = '\\n'): string[] => {
   const stringValue = typeof value === 'string' ? value : String(value || '')
   return stringValue.split(delimiter)
+}
+
+// Configuration Information Component
+function ConfigurationInfo({ testCases }: { testCases: TestCases }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  if (!testCases) return null
+
+  const hasConfiguration = testCases.aiModel || testCases.testingIntent || testCases.coverageLevel || 
+    testCases.testTypes || testCases.userStory || testCases.acceptanceCriteria || 
+    testCases.businessRules || testCases.edgeCases || testCases.testEnvironment
+
+  if (!hasConfiguration) return null
+
+  const getTestingIntentDisplay = (intent?: string) => {
+    const intentMap: Record<string, { label: string; icon: string; description: string }> = {
+      'comprehensive': { label: 'Comprehensive Testing', icon: '🎯', description: 'Full coverage including positive, negative, and edge cases' },
+      'form-validation': { label: 'Form Validation Focus', icon: '📝', description: 'Input validation, error handling, data types, and field interactions' },
+      'user-journey': { label: 'User Journey Testing', icon: '🚶', description: 'End-to-end workflows and multi-step processes' },
+      'integration': { label: 'Feature Integration', icon: '🔗', description: 'Component interactions and data flow testing' },
+      'business-logic': { label: 'Business Logic Validation', icon: '⚖️', description: 'Rules, calculations, and decision-making processes' }
+    }
+    return intentMap[intent || ''] || { label: intent || 'Unknown', icon: '❓', description: '' }
+  }
+
+  const getAiModelDisplay = (model?: string) => {
+    const modelMap: Record<string, { name: string; provider: string; icon: string }> = {
+      'claude': { name: 'Claude', provider: 'Anthropic', icon: '🎯' },
+      'gpt-4-vision': { name: 'GPT-4 Vision', provider: 'OpenAI', icon: '🧠' },
+      'gpt-4o': { name: 'GPT-4o', provider: 'OpenAI', icon: '🧠' }
+    }
+    return modelMap[model || ''] || { name: model || 'Unknown', provider: 'Unknown', icon: '❓' }
+  }
+
+  const getCoverageLevelDisplay = (level?: string) => {
+    const levelMap: Record<string, string> = {
+      'essential': 'Essential Only - Core happy path scenarios',
+      'comprehensive': 'Comprehensive - Happy path + common edge cases',
+      'exhaustive': 'Exhaustive - Complete coverage including rare edge cases'
+    }
+    return levelMap[level || ''] || level || 'Unknown'
+  }
+
+  const getTestTypesDisplay = (types?: string[]) => {
+    if (!types || !Array.isArray(types)) return []
+    
+    const typeMap: Record<string, string> = {
+      'positive': 'Positive Testing',
+      'negative': 'Negative Testing', 
+      'edge_cases': 'Edge Cases'
+    }
+    
+    return types.map(type => typeMap[type] || type)
+  }
+
+  const testingIntent = getTestingIntentDisplay(testCases.testingIntent)
+  const aiModel = getAiModelDisplay(testCases.aiModel)
+  const coverageLevel = getCoverageLevelDisplay(testCases.coverageLevel)
+  const testTypes = getTestTypesDisplay(testCases.testTypes)
+
+  return (
+    <div className="bg-white rounded-lg shadow mb-6">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-6 py-4 text-left border-b border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xl">⚙️</span>
+          <div>
+            <h3 className="text-lg font-medium text-gray-900">Test Generation Configuration</h3>
+            <p className="text-sm text-gray-500">View the settings used to generate these test cases</p>
+          </div>
+        </div>
+        <div className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      
+      {isExpanded && (
+        <div className="p-6 space-y-6">
+          {/* Generation Info */}
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+              <span>ℹ️</span>
+              Generation Information
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+              {testCases.generatedAt && (
+                <div>
+                  <span className="font-medium text-blue-800">Generated:</span>
+                  <div className="text-blue-700 mt-1">
+                    {new Date(testCases.generatedAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long', 
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              {testCases.scenarioName && (
+                <div>
+                  <span className="font-medium text-blue-800">Scenario:</span>
+                  <div className="text-blue-700 mt-1">{testCases.scenarioName}</div>
+                </div>
+              )}
+              
+              {testCases.screenshots && testCases.screenshots.length > 0 && (
+                <div>
+                  <span className="font-medium text-blue-800">Screenshots:</span>
+                  <div className="text-blue-700 mt-1">{testCases.screenshots.length} images analyzed</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* AI Model Configuration */}
+          {testCases.aiModel && (
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <span>🤖</span>
+                AI Model Configuration
+              </h4>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{aiModel.icon}</span>
+                  <div>
+                    <div className="font-medium text-gray-900">{aiModel.name}</div>
+                    <div className="text-sm text-gray-600">{aiModel.provider}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Testing Configuration */}
+          <div>
+            <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <span>🎯</span>
+              Testing Configuration
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {testCases.testingIntent && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">{testingIntent.icon}</span>
+                    <span className="font-medium text-gray-900">Testing Focus</span>
+                  </div>
+                  <div className="text-sm text-gray-700">{testingIntent.label}</div>
+                  {testingIntent.description && (
+                    <div className="text-xs text-gray-500 mt-1">{testingIntent.description}</div>
+                  )}
+                </div>
+              )}
+              
+              {testCases.coverageLevel && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="font-medium text-gray-900 mb-2">Coverage Level</div>
+                  <div className="text-sm text-gray-700">{coverageLevel}</div>
+                </div>
+              )}
+            </div>
+            
+            {testTypes.length > 0 && (
+              <div className="bg-gray-50 p-4 rounded-lg mt-4">
+                <div className="font-medium text-gray-900 mb-2">Test Types Included</div>
+                <div className="flex flex-wrap gap-2">
+                  {testTypes.map((type, index) => (
+                    <span key={index} className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+                      {type}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Context & Requirements */}
+          {(testCases.userStory || testCases.acceptanceCriteria || testCases.businessRules || 
+            testCases.edgeCases || testCases.testEnvironment) && (
+            <div>
+              <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                <span>📋</span>
+                Context & Requirements
+              </h4>
+              <div className="space-y-4">
+                {testCases.userStory && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <span>👤</span>
+                      User Story
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{testCases.userStory}</div>
+                  </div>
+                )}
+                
+                {testCases.acceptanceCriteria && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <span>✅</span>
+                      Acceptance Criteria
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{testCases.acceptanceCriteria}</div>
+                  </div>
+                )}
+                
+                {testCases.businessRules && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <span>⚖️</span>
+                      Business Rules
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{testCases.businessRules}</div>
+                  </div>
+                )}
+                
+                {testCases.edgeCases && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <span>🔍</span>
+                      Edge Cases
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{testCases.edgeCases}</div>
+                  </div>
+                )}
+                
+                {testCases.testEnvironment && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <span>🖥️</span>
+                      Test Environment
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{testCases.testEnvironment}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Results() {
@@ -148,12 +409,21 @@ function Results() {
   const downloadXlsx = async () => {
     try {
       const token = localStorage.getItem('authToken');
+      console.log('Auth token exists:', !!token);
+      console.log('Token length:', token?.length);
+      
+      if (!token) {
+        alert('You are not logged in. Please refresh the page and log in again.');
+        return;
+      }
+      
       const headers: HeadersInit = {
         "Content-Type": "application/json",
       };
       
       if (token) {
         headers.Authorization = `Bearer ${token}`;
+        console.log('Adding Authorization header to XLSX request');
       }
       
       const response = await fetch("http://localhost:3001/api/download/xlsx", {
@@ -217,13 +487,25 @@ function Results() {
         formData.append('scenarioId', testCases.scenarioId!.toString());
         
         // Preserve AI model setting from the original generation
+        console.log('=== TEST CASE REGENERATION DEBUG ===');
         console.log('Available testCases data:', Object.keys(testCases));
-        console.log('testCases.aiModel:', testCases.aiModel);
-        console.log('testCases.scenarioId:', testCases.scenarioId);
+        console.log('Configuration being used for regeneration:');
+        console.log('- AI Model:', testCases.aiModel);
+        console.log('- Testing Intent:', testCases.testingIntent);
+        console.log('- Coverage Level:', testCases.coverageLevel);
+        console.log('- Test Types:', testCases.testTypes);
+        console.log('- User Story:', testCases.userStory ? 'Present' : 'Not set');
+        console.log('- Acceptance Criteria:', testCases.acceptanceCriteria ? 'Present' : 'Not set');
+        console.log('- Business Rules:', testCases.businessRules ? 'Present' : 'Not set');
+        console.log('- Edge Cases:', testCases.edgeCases ? 'Present' : 'Not set');
+        console.log('- Test Environment:', testCases.testEnvironment ? 'Present' : 'Not set');
+        console.log('- Scenario ID:', testCases.scenarioId);
+        console.log('- Screenshot Count:', testCases.screenshots?.length || 0);
         
         const aiModel = testCases.aiModel || 'claude';
         formData.append('aiModel', aiModel);
         console.log('Using AI model for regeneration:', aiModel);
+        console.log('=====================================');
         
         // Note: The backend will use the scenario's saved AI model if none is provided
         
@@ -359,6 +641,9 @@ function Results() {
             </button>
           </div>
         </div>
+
+        {/* Configuration Information Display */}
+        <ConfigurationInfo testCases={testCases} />
 
 
         <div className="bg-white rounded-lg shadow">
