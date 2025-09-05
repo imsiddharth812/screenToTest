@@ -6,9 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "server": "node server/index.js",
-    "server:dev": "nodemon server/index.js",
-    "server:new": "node server/app.js",
+    "server": "node server/app.js",
+    "server:dev": "nodemon server/app.js",
     "dev:full": "./start-dev.sh",
     "check": "./check-servers.sh",
     "clean": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true && lsof -ti:3001 | xargs kill -9 2>/dev/null || true"
